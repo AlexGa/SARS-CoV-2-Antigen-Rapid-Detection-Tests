@@ -1,12 +1,6 @@
 ---
 title: 'SARS-CoV-2 Antigen Rapid Detection Tests: test performance during the COVID-19 pandemic and the impact of COVID-19 vaccination'
 output:
- # pdf_document:
- #  latex_engine: xelatex
- #  includes:
- #      in_header: "wrap-code.tex"
- #  toc: no
- #  toc_depth: '2'
  html_document:
   df_print: paged
   code_folding: hide
@@ -14,16 +8,9 @@ output:
   toc_depth: 2
   toc_float:
     collapsed: no
+  self_contained: yes
 keep-latex: true
-# always_allow_html: true
-# output:
-#   github_document:
-#     df_print: paged
-#     # code_folding: hide
-#     toc: true
-#     toc_depth: 2
-#     # toc_float:
-# #     #   collapsed: FALSE
+always_allow_html: true
 ---
 
 ```{r setup, include=FALSE}
@@ -76,6 +63,8 @@ library(writexl)
 library(tidyr)
 library(pROC)
 library(ggplot2)
+library(kableExtra)
+library(knitr)
 source("scripts/helper_functions.R")
 ```
 
@@ -93,7 +82,8 @@ if(!dir.exists(res_dir)){
   dir.create(res_dir)
 }
 
-df <- readr::read_csv2("data/data.csv")
+df <- readr::read_csv2("data/data.csv") %>% 
+      mutate(manufacturer = as.factor(manufacturer))
 ```
 
 # Factors influencing test result of RDT
@@ -106,8 +96,10 @@ df_box_tid <- df %>% dplyr::mutate(symptoms1 = if_else(symptoms == 1, true = 1, 
                            omicron = as.numeric(omicron),
                            `vaccination status` = as.numeric(`vaccination status`),
                            `viral load` = as.numeric( `viral load`),
-                           genderW = if_else(gender == "W", true = 1, false = 0)) %>%
-                dplyr::select(-symptoms, -gender)
+                           sexW = if_else(sex == "W", true = 1, false = 0),
+                           manufacturer1 = if_else(manufacturer == 1, true = 1, false = 0),
+                           manufacturer2 = if_else(manufacturer == 2, true = 1, false = 0)) %>%
+                dplyr::select(-symptoms, -manufacturer, -sex)
 
 png(filename = file.path(plt_dir, paste0("Scatter_all_pairs.png")),units="px", width=5000, height=5000, res=300)
 pairs(df_box_tid %>% dplyr::select(-ID, -`test result`), lower.panel = panel.cor, pch = 20)
@@ -121,7 +113,8 @@ pairs(df_box_tid %>% dplyr::select(-ID, -`test result`), lower.panel = panel.cor
 Check with Box-Tidwell test with transformed continuous variables
 
 ```{r box tidwell, warning=FALSE, echo=TRUE, message=FALSE, comment=FALSE, results = 'asis', fig.width = 10, fig.height = 5}
-lreg <- glm(`test result` ~ age + ageTrans + `viral load` + viral_loadTrans + genderW + symptoms1 + symptoms2 + `vaccination status` + omicron + manufacturer, 
+lreg <- glm(`test result` ~ age + ageTrans + `viral load` + viral_loadTrans + sexW + symptoms1 + symptoms2 + 
+              `vaccination status` + omicron + manufacturer1 + manufacturer2, 
             data = df_box_tid %>% mutate(ageTrans = age * log(age),
                                  viral_loadTrans = `viral load` * log(`viral load`)), 
             family=binomial(link="logit"))
@@ -140,7 +133,7 @@ as.data.frame(summary(lreg)$coefficients) %>%
 y <- df %>% pull(`test result`)
 X <- df %>% dplyr::select(-ID, -`test result`) %>%
             dplyr::mutate(symptoms = factor(symptoms),# + 1, levels = 1:3),
-                          gender = factor(gender, levels = c("M", "W")),
+                          sex = factor(sex, levels = c("M", "W")),
                           `vaccination status` = as.factor(as.numeric(`vaccination status`)),
                           manufacturer = factor(manufacturer))
 X_lasso <- X %>% mutate(across(where(is.factor), .fns = as.integer)) %>% as.matrix()
@@ -156,22 +149,22 @@ lasso_cv <- glmnet::cv.glmnet(x = X_lasso, y = y, family = "binomial", alpha = 1
 model_all_lambdas <- glmnet::glmnet(x = X_lasso, y = y, family = "binomial", alpha = 1, nfolds = 10, lambda = lambdas2try)
 par(mfcol = c(1,2), mar=c(5,4.,2.,1)+0.1, font.lab = 2)
 plot(lasso_cv)
-put.fig.letter(label="A", location="topleft", font=2, cex = 1.5)
+put.fig.letter(label="a", location="topleft", font=1, cex = 1.5)
 matplot(log(model_all_lambdas$lambda), t(as.matrix(model_all_lambdas$beta)), type = "l", lty = rep(c(1,2), each = 9), col = RColorBrewer::brewer.pal(6,"Dark2"), lwd = 2,
         xlab = parse(text = ("Log(lambda)")), ylab = "Value of coefficients")
 legend("topright", lty = rep(c(1,2), each = 9), col = rep(RColorBrewer::brewer.pal(6,"Dark2"), 2) , lwd = 1.5, cex = .7,
-       legend = rownames(model_all_lambdas$beta))
-put.fig.letter(label="B", location="topleft", font=2, cex = 1.5)
+       legend = rownames(model_all_lambdas$beta), bty = "n")
+put.fig.letter(label="b", location="topleft", font=1, cex = 1.5)
 
-pdf(file.path(plt_dir, "LASSO_REGRESSION.pdf"), width = 10, height = 4)
+pdf(file.path(plt_dir, "LASSO_REGRESSION.pdf"), height = 5)
 par(mfcol = c(1,2), mar=c(5,4.,2.,1)+0.1, font.lab = 2)
 plot(lasso_cv)
-put.fig.letter(label="A", location="topleft", font=2, cex = 1.5)
+put.fig.letter(label="a", location="topleft", font=1, cex = 1.5)
 matplot(log(model_all_lambdas$lambda), t(as.matrix(model_all_lambdas$beta)), type = "l", lty = rep(c(1,2), each = 9), col = RColorBrewer::brewer.pal(6,"Dark2"), lwd = 2,
         xlab = parse(text = ("Log(lambda)")), ylab = "Value of coefficients")
 legend("topright", lty = rep(c(1,2), each = 9), col = rep(RColorBrewer::brewer.pal(6,"Dark2"), 2) , lwd = 1.5, cex = .7,
-       legend = rownames(model_all_lambdas$beta))
-put.fig.letter(label="B", location="topleft", font=2, cex = 1.5)
+       legend = rownames(model_all_lambdas$beta), bty = "n")
+put.fig.letter(label="b", location="topleft", font=1, cex = 1.5)
 dev.off()
 ```
 
@@ -179,6 +172,9 @@ dev.off()
 
 ```{r perform lasso, warning=FALSE, echo=TRUE, message=FALSE, comment=FALSE, results = 'asis'}
 model_all_lambdas <- glmnet::glmnet(x = X_lasso, y = y, family = "binomial", alpha = 1, nfolds = 10, lambda = lasso_cv$lambda.min)
+
+## Extract variables unequal zero after lasso
+lasso_vars_gt_zero <- rownames(model_all_lambdas$beta)[as.matrix(model_all_lambdas$beta)[,1] != 0]
 
 lambda_cv <- lasso_cv$lambda.min
 lasso_best <- broom::tidy(lasso_cv)[lasso_cv$index,] %>% dplyr::rename(MSE = estimate)
@@ -196,21 +192,54 @@ roc_plt$roc_plot
 ggplot2::ggsave(plot = roc_plt$roc_plot, filename = file.path(plt_dir, "ROC_curve_logistic_regression.pdf"), device = "pdf", width = 8, height = 8, dpi = 300)
 ```
 
-## Final logistic regression based on selected features
+## Model 1: all factors after lasso
 
-```{r final features, warning=FALSE, echo=TRUE, message=FALSE, comment=FALSE, results = 'asis'}
-## Extract varaibles unequal zero after lasso
-lasso_vars_gt_zero <- rownames(model_all_lambdas$beta)[as.matrix(model_all_lambdas$beta)[,1] != 0]
+Remaining factors from lasso regression: `r paste0(lasso_vars_gt_zero, collapse = ", ")`
+
+```{tikz all features dag, echo=FALSE, fig.cap="DAG: Associated features", fig.ext='png', message=FALSE, warning=FALSE, comment=FALSE}
+\usetikzlibrary{arrows.meta}
+\usetikzlibrary{shapes.geometric, arrows}
+\usetikzlibrary{positioning}
+\tikzset{
+    > = stealth,
+    every node/.append style = {
+        text = black
+    },
+    every path/.append style = {
+        arrows = ->,
+        draw = black,
+        fill = black
+    }
+}
+
+\tikz{
+    \node (y) {test result};
+    \node (a) [below left = of y] {viral load};
+    \node (b) [below = of a] {symptoms};
+    \node (c) [below right = of b] {omicron};
+    \node (d) [right = of c] {vaccination status};
+    \node[draw=gray] (e) [below right = of y] {sex};
+    \path[dotted] (b) -- (a);
+    \path[dotted] (c) -- (a);
+    \path[dotted] (c) -- (b);
+    \path[dotted] (d) -- (a);
+    \path[dotted] (d) -- (b);
+    \path (a) -- (y);
+    \path (b) -- (y);
+    \path (c) -- (y);
+    \path (d) -- (y);
+    % confounding effects
+    \path[draw=gray] (e) -- (y);
+    \path[draw=gray] (e) -- (a);
+    \path[draw=gray] (e) -- (b);
+}
 ```
 
-### Odds ratios
 
-`r paste0(lasso_vars_gt_zero, collapse = ", ")`
-
-```{r final logistic regression, warning=FALSE, echo=TRUE, message=FALSE, comment=FALSE, results='hide', fig.width = 10, fig.height = 5}
+```{r final logistic regression model 1, warning=FALSE, echo=TRUE, message=FALSE, comment=FALSE, results='hide', fig.width = 10, fig.height = 5}
 df_logit <- df %>% dplyr::select(`test result`, matches(paste0(lasso_vars_gt_zero, collapse = "|"))) %>%
             dplyr::mutate(symptoms = factor(symptoms),
-                          gender = factor(gender, levels = c("M", "W")),
+                          sex = factor(sex, levels = c("M", "W")),
                           `vaccination status` = as.factor(as.numeric(`vaccination status`)))
 
 # Perform final logistic regression with shrinked data set
@@ -224,20 +253,24 @@ odds_ratio_ci <- data.frame(exp(confint.default(glm_full)[-1,]), check.names = F
 # Store odds ratios and p values of lasso regression
 
 odds_ratio %>% inner_join(odds_ratio_ci) %>% inner_join(df_coefs) %>%
-  writexl::write_xlsx(path = file.path(res_dir, "lasso_coefs_odds_ratios.xlsx"))
+  writexl::write_xlsx(path = file.path(res_dir, "lasso_coefs_odds_ratios_model1.xlsx"))
 
 odds_ratio_ci <- odds_ratio_ci %>% as.data.frame()
 
 # Plot odds ratios and CI
+x_labels <- gsub(x = odds_ratio %>% pull(Feature), pattern = " ", repl = "\n")
+x_labels <- gsub(x = x_labels, pattern = "`|2", repl = "") 
+x_labels <- gsub(x = x_labels, pattern = "sexW", repl = "sex")
+
 
 pdf(file.path(plt_dir, "odds_ratio.pdf"), width = 20, height = 7)
 par(mgp = c(2.5,1,0), font.lab = 2, mfrow=c(1,1), mar = c(4.1, 4.1, 0.2, 0.2))
 plot(seq_len(nrow(odds_ratio)), odds_ratio %>% pull(odds_ratio),
-     ylim = c(-1,5), pch = 20, cex = 3, xaxt = "n", xlab = "coefficients",  ylab = "odds ratio")
+     ylim = c(-1,6), pch = 20, cex = 3, xaxt = "n", xlab = "coefficients",  ylab = "odds ratio")
 sapply(seq_len(nrow(odds_ratio)), function(i){
   arrows(x0=i, y0=odds_ratio_ci[i,2], x1=i, y1=odds_ratio_ci[i,3], code=3, col="black", lwd=2, angle=90, length=0.25)
 })
-axis(side = 1, at = seq_len(nrow(odds_ratio)), labels = odds_ratio %>% pull(Feature))
+axis(side = 1, at = seq_len(nrow(odds_ratio)), labels = x_labels)
 abline(h = 1, lty = 2)
 dev.off()
 
@@ -251,15 +284,15 @@ sample_sizes_df <- df_logit %>%
   group_by(feature) %>%
   mutate(rel = n/sum(n))
   
-writexl::write_xlsx(sample_sizes_df, path = file.path(res_dir, "sample_sizes_for_features.xlsx"))
+writexl::write_xlsx(sample_sizes_df, path = file.path(res_dir, "sample_sizes_for_features_model1.xlsx"))
 
 par(mgp = c(2.5,1,0), font.lab = 2, mfrow=c(1,1), mar = c(4.1, 4.1, 0.2, 0.2))
 plot(seq_len(nrow(odds_ratio)), odds_ratio %>% pull(odds_ratio),
-     ylim = c(-1,5), pch = 20, cex = 3, xaxt = "n", xlab = "coefficients",  ylab = "odds ratio")
+     ylim = c(-1,6), pch = 20, cex = 3, xaxt = "n", xlab = "coefficients",  ylab = "odds ratio")
 sapply(seq_len(nrow(odds_ratio)), function(i){
   arrows(x0=i, y0=odds_ratio_ci[i,2], x1=i, y1=odds_ratio_ci[i,3], code=3, col="black", lwd=2, angle=90, length=0.25)
 })
-axis(side = 1, at = seq_len(nrow(odds_ratio)), labels = odds_ratio %>% pull(Feature))
+axis(side = 1, at = seq_len(nrow(odds_ratio)), labels = x_labels)
 abline(h = 1, lty = 2)
 ```
 
@@ -272,7 +305,12 @@ padj_df <- data.frame(Feature = df_coefs$Feature,
 sum_odds_ratio_table <- odds_ratio %>% 
                         inner_join(odds_ratio_ci) %>% 
                         inner_join(df_coefs) %>%
-                        inner_join(padj_df)
+                        inner_join(padj_df) %>%
+                        mutate(Feature = case_when(Feature == "symptoms1" ~ "typical symptomatic", 
+                                                   Feature == "symptoms2" ~ "atypical symptomatic",
+                                                   TRUE ~ Feature),
+                               Feature = gsub(x = gsub(x = Feature, pattern = "2", repl = ""), pattern = "sexW", repl = "sex"),
+                               Feature = factor(Feature, levels = c("`viral load`", "typical symptomatic", "atypical symptomatic", "omicron", "`vaccination status`", "sex")))
 
 sum_odds_ratio_table %>% 
   mutate(across(where(is.double), 
@@ -286,6 +324,890 @@ sum_odds_ratio_table %>%
 sample_sizes_df %>%
   mutate(across(where(is.double), ~ round(.x, digits = 2))) %>% 
   knitr::kable()
+```
+
+
+## Model 2: viral load 
+
+```{tikz model 2 dag, echo=FALSE, fig.cap="DAG: Associated features", fig.ext='png', message=FALSE, warning=FALSE, comment=FALSE}
+\usetikzlibrary{arrows.meta}
+\usetikzlibrary{shapes.geometric, arrows}
+\usetikzlibrary{positioning}
+\tikzset{
+    > = stealth,
+    every node/.append style = {
+        text = black
+    },
+    every path/.append style = {
+        arrows = ->,
+        draw = black,
+        fill = black
+    }
+}
+
+\tikz{
+    \node (y) {test result};
+    \node (a) [below left = of y] {viral load};
+    \node[opacity=0.25] (b) [below = of a] {symptoms};
+    \node[opacity=0.25] (c) [below right = of b] {omicron};
+    \node[opacity=0.25] (d) [right = of c] {vaccination status};
+    \node[draw=gray] (e) [below right = of y] {sex};
+    \path[opacity=0.25] (b) -- (a);
+    \path[dotted,opacity=0.25] (c) -- (a);
+    \path[dotted,opacity=0.25] (c) -- (b);
+    \path[dotted,opacity=0.25] (d) -- (a);
+    \path[dotted,opacity=0.25] (d) -- (b);
+    \path (a) -- (y);
+    \path[opacity=0.25] (b) -- (y);
+    \path[opacity=0.25] (c) -- (y);
+    \path[opacity=0.25] (d) -- (y);
+    % confounding effects
+    \path[draw=gray] (e) -- (y);
+    \path[draw=gray] (e) -- (a);
+    \path[draw=gray,opacity=0.25] (e) -- (b);
+}
+```
+
+```{r model 2 logistic regression, warning=FALSE, echo=TRUE, message=FALSE, comment=FALSE, results='hide', fig.width = 10, fig.height = 5}
+# Perform final logistic regression with shrinked data set
+glm_load <- glm(`test result` ~  `viral load` + sex, data = df_logit, family = binomial(link='logit'))
+
+df_coefs_load <- as.data.frame(summary(glm_load)$coefficients) %>% as_tibble(rownames = "Feature")
+
+odds_ratio_load <- data.frame(odds_ratio = exp(coefficients(glm_load)[-1])) %>% as_tibble(rownames = "Feature")
+odds_ratio_ci_load <- data.frame(exp(confint.default(glm_load)[-1,]), check.names = F) %>% as_tibble(rownames = "Feature")
+
+# Store odds ratios and p values of lasso regression
+
+odds_ratio_load %>% inner_join(odds_ratio_ci_load) %>% inner_join(df_coefs_load) %>%
+  writexl::write_xlsx(path = file.path(res_dir, "lasso_coefs_odds_ratios_model2.xlsx"))
+
+odds_ratio_ci_load <- odds_ratio_ci_load %>% as.data.frame()
+
+# Plot odds ratios and CI
+x_labels <- gsub(x = odds_ratio_load %>% pull(Feature), pattern = " ", repl = "\n")
+x_labels <- gsub(x = x_labels, pattern = "`|2", repl = "")
+x_labels <- gsub(x = x_labels, pattern = "sexW", repl = "sex")
+
+pdf(file.path(plt_dir, "odds_ratio_model2.pdf"), width = 20, height = 7)
+par(mgp = c(2.5,1,0), font.lab = 2, mfrow=c(1,1), mar = c(4.1, 4.1, 0.2, 0.2))
+plot(seq_len(nrow(odds_ratio_load)), odds_ratio_load %>% pull(odds_ratio),
+     ylim = c(-1,6), pch = 20, cex = 3, xaxt = "n", xlab = "coefficients",  ylab = "odds ratio")
+sapply(seq_len(nrow(odds_ratio_load)), function(i){
+  arrows(x0=i, y0=odds_ratio_ci_load[i,2], x1=i, y1=odds_ratio_ci_load[i,3], code=3, col="black", lwd=2, angle=90, length=0.25)
+})
+axis(side = 1, at = seq_len(nrow(odds_ratio_load)), labels = x_labels)
+abline(h = 1, lty = 2)
+dev.off()
+
+par(mgp = c(2.5,1,0), font.lab = 2, mfrow=c(1,1), mar = c(4.1, 4.1, 0.2, 0.2))
+plot(seq_len(nrow(odds_ratio_load)), odds_ratio_load %>% pull(odds_ratio),
+     ylim = c(-1,6), pch = 20, cex = 3, xaxt = "n", xlab = "coefficients",  ylab = "odds ratio")
+sapply(seq_len(nrow(odds_ratio_load)), function(i){
+  arrows(x0=i, y0=odds_ratio_ci_load[i,2], x1=i, y1=odds_ratio_ci_load[i,3], code=3, col="black", lwd=2, angle=90, length=0.25)
+})
+axis(side = 1, at = seq_len(nrow(odds_ratio_load)), labels = x_labels)
+abline(h = 1, lty = 2)
+```
+
+**Odds ratio table**
+
+```{r, warning=FALSE, echo=TRUE, message=FALSE, comment=FALSE, results='asis', fig.width = 10, fig.height = 5}
+padj_df <- data.frame(Feature = df_coefs_load$Feature, 
+                      p.adj = p.adjust(df_coefs_load$`Pr(>|z|)`, method = "BY"))
+
+sum_odds_ratio_table_load <- odds_ratio_load %>% 
+                        inner_join(odds_ratio_ci_load) %>% 
+                        inner_join(df_coefs_load) %>%
+                        inner_join(padj_df) %>%
+                        mutate(Feature = case_when(Feature == "symptoms1" ~ "typical symptomatic", 
+                                                   Feature == "symptoms2" ~ "atypical symptomatic",
+                                                   TRUE ~ Feature),
+                               Feature = gsub(x = gsub(x = Feature, pattern = "2", repl = ""), pattern = "sexW", repl = "sex"),
+                               Feature = factor(Feature, levels = c("`viral load`", "typical symptomatic", "atypical symptomatic", "omicron", "`vaccination status`", "sex")))
+
+sum_odds_ratio_table_load %>% 
+  mutate(across(where(is.double), 
+                ~ format(.x, digits = 3, scientific = TRUE))) %>% 
+  knitr::kable()
+```
+
+## Model 3: symptoms
+
+```{tikz model 3 dag, echo=FALSE, fig.cap="DAG: Associated features", fig.ext='png', message=FALSE, warning=FALSE, comment=FALSE}
+\usetikzlibrary{arrows.meta}
+\usetikzlibrary{shapes.geometric, arrows}
+\usetikzlibrary{positioning}
+\tikzset{
+    > = stealth,
+    every node/.append style = {
+        text = black
+    },
+    every path/.append style = {
+        arrows = ->,
+        draw = black,
+        fill = black
+    }
+}
+
+\tikz{
+    \node (y) {test result};
+    \node[opacity=0.25] (a) [below left = of y] {viral load};
+    \node (b) [below = of a] {symptoms};
+    \node[opacity=0.25] (c) [below right = of b] {omicron};
+    \node[opacity=0.25] (d) [right = of c] {vaccination status};
+    \node[draw=gray] (e) [below right = of y] {sex};
+    \path[opacity=0.25] (b) -- (a);
+    \path[dotted,opacity=0.25] (c) -- (a);
+    \path[dotted,opacity=0.25] (c) -- (b);
+    \path[dotted,opacity=0.25] (d) -- (a);
+    \path[dotted,opacity=0.25] (d) -- (b);
+    \path[opacity=0.25] (a) -- (y);
+    \path (b) -- (y);
+    \path[opacity=0.25] (c) -- (y);
+    \path[opacity=0.25] (d) -- (y);
+    % confounding effects
+    \path[draw=gray] (e) -- (y);
+    \path[draw=gray,opacity=0.25] (e) -- (a);
+    \path[draw=gray] (e) -- (b);
+}
+```
+
+```{r model 3 logistic regression, warning=FALSE, echo=TRUE, message=FALSE, comment=FALSE, results='hide', fig.width = 10, fig.height = 5}
+# Perform final logistic regression with shrinked data set
+glm_symp <- glm(`test result` ~  symptoms + sex, data = df_logit, family = binomial(link='logit'))
+
+df_coefs_symp <- as.data.frame(summary(glm_symp)$coefficients) %>% as_tibble(rownames = "Feature")
+
+odds_ratio_symp <- data.frame(odds_ratio = exp(coefficients(glm_symp)[-1])) %>% as_tibble(rownames = "Feature")
+odds_ratio_ci_symp <- data.frame(exp(confint.default(glm_symp)[-1,]), check.names = F) %>% as_tibble(rownames = "Feature")
+
+# Store odds ratios and p values of lasso regression
+
+odds_ratio_symp %>% inner_join(odds_ratio_ci_symp) %>% inner_join(df_coefs_symp) %>%
+  writexl::write_xlsx(path = file.path(res_dir, "lasso_coefs_odds_ratios_model3.xlsx"))
+
+odds_ratio_ci_symp <- odds_ratio_ci_symp %>% as.data.frame()
+
+# Plot odds ratios and CI
+x_labels <- gsub(x = odds_ratio_symp %>% pull(Feature), pattern = " ", repl = "\n")
+x_labels <- gsub(x = x_labels, pattern = "`|2", repl = "")
+x_labels <- gsub(x = x_labels, pattern = "sexW", repl = "sex")
+
+pdf(file.path(plt_dir, "odds_ratio_model3.pdf"), width = 20, height = 7)
+par(mgp = c(2.5,1,0), font.lab = 2, mfrow=c(1,1), mar = c(4.1, 4.1, 0.2, 0.2))
+plot(seq_len(nrow(odds_ratio_symp)), odds_ratio_symp %>% pull(odds_ratio),
+     ylim = c(-1,6), pch = 20, cex = 3, xaxt = "n", xlab = "coefficients",  ylab = "odds ratio")
+sapply(seq_len(nrow(odds_ratio_symp)), function(i){
+  arrows(x0=i, y0=odds_ratio_ci_symp[i,2], x1=i, y1=odds_ratio_ci_symp[i,3], code=3, col="black", lwd=2, angle=90, length=0.25)
+})
+axis(side = 1, at = seq_len(nrow(odds_ratio_symp)), labels = x_labels)
+abline(h = 1, lty = 2)
+dev.off()
+
+par(mgp = c(2.5,1,0), font.lab = 2, mfrow=c(1,1), mar = c(4.1, 4.1, 0.2, 0.2))
+plot(seq_len(nrow(odds_ratio_symp)), odds_ratio_symp %>% pull(odds_ratio),
+     ylim = c(-1,6), pch = 20, cex = 3, xaxt = "n", xlab = "coefficients",  ylab = "odds ratio")
+sapply(seq_len(nrow(odds_ratio_symp)), function(i){
+  arrows(x0=i, y0=odds_ratio_ci_symp[i,2], x1=i, y1=odds_ratio_ci_symp[i,3], code=3, col="black", lwd=2, angle=90, length=0.25)
+})
+axis(side = 1, at = seq_len(nrow(odds_ratio_symp)), labels = x_labels)
+abline(h = 1, lty = 2)
+```
+
+**Odds ratio table**
+
+```{r, warning=FALSE, echo=TRUE, message=FALSE, comment=FALSE, results='asis', fig.width = 10, fig.height = 5}
+padj_df <- data.frame(Feature = df_coefs_symp$Feature, 
+                      p.adj = p.adjust(df_coefs_symp$`Pr(>|z|)`, method = "BY"))
+
+sum_odds_ratio_table_symp <- odds_ratio_symp %>% 
+                        inner_join(odds_ratio_ci_symp) %>% 
+                        inner_join(df_coefs_symp) %>%
+                        inner_join(padj_df) %>%
+                        mutate(Feature = case_when(Feature == "symptoms1" ~ "typical symptomatic", 
+                                                   Feature == "symptoms2" ~ "atypical symptomatic",
+                                                   TRUE ~ Feature),
+                               Feature = gsub(x = gsub(x = Feature, pattern = "2", repl = ""), pattern = "sexW", repl = "sex"),
+                               Feature = factor(Feature, levels = c("`viral load`", "typical symptomatic", "atypical symptomatic", "omicron", "`vaccination status`", "sex")))
+
+sum_odds_ratio_table_symp %>% 
+  mutate(across(where(is.double), 
+                ~ format(.x, digits = 3, scientific = TRUE))) %>% 
+  knitr::kable()
+```
+
+
+## Model 4: VOC omicron infection
+
+```{tikz model 4 dag, echo=FALSE, fig.cap="DAG: Associated features", fig.ext='png', message=FALSE, warning=FALSE, comment=FALSE}
+\usetikzlibrary{arrows.meta}
+\usetikzlibrary{shapes.geometric, arrows}
+\usetikzlibrary{positioning}
+\tikzset{
+    > = stealth,
+    every node/.append style = {
+        text = black
+    },
+    every path/.append style = {
+        arrows = ->,
+        draw = black,
+        fill = black
+    }
+}
+
+\tikz{
+    \node (y) {test result};
+    \node[opacity=0.25] (a) [below left = of y] {viral load};
+    \node[opacity=0.25] (b) [below = of a] {symptoms};
+    \node (c) [below right = of b] {omicron};
+    \node[opacity=0.25] (d) [right = of c] {vaccination status};
+    \node[draw=gray,opacity=0.25] (e) [below right = of y] {sex};
+    \path[opacity=0.25] (b) -- (a);
+    \path[dotted,opacity=0.25] (c) -- (a);
+    \path[dotted,opacity=0.25] (c) -- (b);
+    \path[dotted,opacity=0.25] (d) -- (a);
+    \path[dotted,opacity=0.25] (d) -- (b);
+    \path[opacity=0.25] (a) -- (y);
+    \path[opacity=0.25] (b) -- (y);
+    \path (c) -- (y);
+    \path[opacity=0.25] (d) -- (y);
+    % confounding effects
+    \path[draw=gray,opacity=0.25] (e) -- (y);
+    \path[draw=gray,opacity=0.25] (e) -- (a);
+    \path[draw=gray,opacity=0.25] (e) -- (b);
+}
+```
+
+```{r model 4 logistic regression, warning=FALSE, echo=TRUE, message=FALSE, comment=FALSE, results='hide', fig.width = 10, fig.height = 5}
+# Perform final logistic regression with shrinked data set
+glm_omic <- glm(`test result` ~  omicron, data = df_logit, family = binomial(link='logit'))
+
+df_coefs_omic <- as.data.frame(summary(glm_omic)$coefficients) %>% as_tibble(rownames = "Feature")
+
+odds_ratio_omic <- data.frame(odds_ratio = exp(coefficients(glm_omic)[-1])) %>% as_tibble(rownames = "Feature")
+odds_ratio_ci_omic <- data.frame(exp(confint.default(glm_omic)), check.names = F)[-1,] %>% as_tibble(rownames = "Feature")
+
+# Store odds ratios and p values of lasso regression
+
+odds_ratio_omic %>% inner_join(odds_ratio_ci_omic) %>% inner_join(df_coefs_omic) %>%
+  writexl::write_xlsx(path = file.path(res_dir, "lasso_coefs_odds_ratios_model4.xlsx"))
+
+odds_ratio_ci_omic <- odds_ratio_ci_omic %>% as.data.frame()
+```
+
+**Odds ratio table**
+
+```{r, warning=FALSE, echo=TRUE, message=FALSE, comment=FALSE, results='asis', fig.width = 10, fig.height = 5}
+padj_df <- data.frame(Feature = df_coefs_omic$Feature, 
+                      p.adj = p.adjust(df_coefs_omic$`Pr(>|z|)`, method = "BY"))
+
+sum_odds_ratio_table_omic <- odds_ratio_omic %>% 
+                        inner_join(odds_ratio_ci_omic) %>% 
+                        inner_join(df_coefs_omic) %>%
+                        inner_join(padj_df) %>%
+                        mutate(Feature = case_when(Feature == "symptoms1" ~ "typical symptomatic", 
+                                                   Feature == "symptoms2" ~ "atypical symptomatic",
+                                                   TRUE ~ Feature),
+                               Feature = gsub(x = gsub(x = Feature, pattern = "2", repl = ""), pattern = "sexW", repl = "sex"),
+                               Feature = factor(Feature, levels = c("`viral load`", "typical symptomatic", "atypical symptomatic", "omicron", "`vaccination status`", "sex")))
+
+sum_odds_ratio_table_omic %>% 
+  mutate(across(where(is.double), 
+                ~ format(.x, digits = 3, scientific = TRUE))) %>% 
+  knitr::kable()
+```
+
+## Model 5: vaccination status
+
+```{tikz model 5 dag, echo=FALSE, fig.cap="DAG: Associated features", fig.ext='png', message=FALSE, warning=FALSE, comment=FALSE}
+\usetikzlibrary{arrows.meta}
+\usetikzlibrary{shapes.geometric, arrows}
+\usetikzlibrary{positioning}
+\tikzset{
+    > = stealth,
+    every node/.append style = {
+        text = black
+    },
+    every path/.append style = {
+        arrows = ->,
+        draw = black,
+        fill = black
+    }
+}
+
+\tikz{
+    \node (y) {test result};
+    \node[opacity=0.25] (a) [below left = of y] {viral load};
+    \node[opacity=0.25] (b) [below = of a] {symptoms};
+    \node[opacity=0.25] (c) [below right = of b] {omicron};
+    \node (d) [right = of c] {vaccination status};
+    \node[draw=gray,opacity=0.25] (e) [below right = of y] {sex};
+    \path[opacity=0.25] (b) -- (a);
+    \path[dotted,opacity=0.25] (c) -- (a);
+    \path[dotted,opacity=0.25] (c) -- (b);
+    \path[dotted,opacity=0.25] (d) -- (a);
+    \path[dotted,opacity=0.25] (d) -- (b);
+    \path[opacity=0.25] (a) -- (y);
+    \path[opacity=0.25] (b) -- (y);
+    \path[opacity=0.25] (c) -- (y);
+    \path (d) -- (y);
+    % confounding effects
+    \path[opacity=0.25] (e) -- (y);
+    \path[draw=gray,opacity=0.25] (e) -- (a);
+    \path[draw=gray,opacity=0.25] (e) -- (b);
+}
+```
+
+```{r model 5 logistic regression vaccs, warning=FALSE, echo=TRUE, message=FALSE, comment=FALSE, results='hide', fig.width = 10, fig.height = 5}
+# Perform final logistic regression with shrinked data set
+glm_vaccs <- glm(`test result` ~  `vaccination status`, data = df_logit, family = binomial(link='logit'))
+
+df_coefs_vaccs <- as.data.frame(summary(glm_vaccs)$coefficients) %>% as_tibble(rownames = "Feature")
+
+odds_ratio_vaccs <- data.frame(odds_ratio = exp(coefficients(glm_vaccs)[-1])) %>% as_tibble(rownames = "Feature")
+odds_ratio_ci_vaccs <- data.frame(exp(confint.default(glm_vaccs)), check.names = F)[-1,] %>% as_tibble(rownames = "Feature")
+
+# Store odds ratios and p values of lasso regression
+
+odds_ratio_vaccs %>% inner_join(odds_ratio_ci_vaccs) %>% inner_join(df_coefs_vaccs) %>%
+  writexl::write_xlsx(path = file.path(res_dir, "lasso_coefs_odds_ratios_model5.xlsx"))
+
+odds_ratio_ci_vaccs <- odds_ratio_ci_vaccs %>% as.data.frame()
+```
+
+**Odds ratio table**
+
+```{r, warning=FALSE, echo=TRUE, message=FALSE, comment=FALSE, results='asis', fig.width = 10, fig.height = 5}
+padj_df <- data.frame(Feature = df_coefs_vaccs$Feature, 
+                      p.adj = p.adjust(df_coefs_vaccs$`Pr(>|z|)`, method = "BY"))
+
+sum_odds_ratio_table_vaccs <- odds_ratio_vaccs %>% 
+                        inner_join(odds_ratio_ci_vaccs) %>% 
+                        inner_join(df_coefs_vaccs) %>%
+                        inner_join(padj_df) %>%
+                        mutate(Feature = case_when(Feature == "symptoms1" ~ "typical symptomatic", 
+                                                   Feature == "symptoms2" ~ "atypical symptomatic",
+                                                   TRUE ~ Feature),
+                               Feature = gsub(x = gsub(x = Feature, pattern = "2", repl = ""), pattern = "sexW", repl = "sex"),
+                               Feature = factor(Feature, levels = c("`viral load`", "typical symptomatic", "atypical symptomatic", "omicron", "`vaccination status`", "sex")))
+
+sum_odds_ratio_table_vaccs %>% 
+  mutate(across(where(is.double), 
+                ~ format(.x, digits = 3, scientific = TRUE))) %>% 
+  knitr::kable()
+```
+
+## Model 6: viral load and symptoms 
+
+```{tikz model 6 dag, echo=FALSE, fig.cap="DAG: Associated features", fig.ext='png', message=FALSE, warning=FALSE, comment=FALSE}
+\usetikzlibrary{arrows.meta}
+\usetikzlibrary{shapes.geometric, arrows}
+\usetikzlibrary{positioning}
+\tikzset{
+    > = stealth,
+    every node/.append style = {
+        text = black
+    },
+    every path/.append style = {
+        arrows = ->,
+        draw = black,
+        fill = black
+    }
+}
+
+\tikz{
+    \node (y) {test result};
+    \node (a) [below left = of y] {viral load};
+    \node (b) [below = of a] {symptoms};
+    \node[opacity=0.25] (c) [below right = of b] {omicron};
+    \node[opacity=0.25] (d) [right = of c] {vaccination status};
+    \node[draw=gray] (e) [below right = of y] {sex};
+    \path (b) -- (a);
+    \path[dotted,opacity=0.25] (c) -- (a);
+    \path[dotted,opacity=0.25] (c) -- (b);
+    \path[dotted,opacity=0.25] (d) -- (a);
+    \path[dotted,opacity=0.25] (d) -- (b);
+    \path (a) -- (y);
+    \path (b) -- (y);
+    \path[opacity=0.25] (c) -- (y);
+    \path[opacity=0.25] (d) -- (y);
+    % confounding effects
+    \path[draw=gray] (e) -- (y);
+    \path[draw=gray] (e) -- (a);
+    \path[draw=gray] (e) -- (b);
+}
+```
+
+```{r model 6 logistic regression, warning=FALSE, echo=TRUE, message=FALSE, comment=FALSE, results='hide', fig.width = 10, fig.height = 5}
+glm_sym_load <- glm(`test result` ~  `viral load` + symptoms + sex, data = df_logit, family = binomial(link='logit'))
+
+df_coefs_sym_load <- as.data.frame(summary(glm_sym_load)$coefficients) %>% as_tibble(rownames = "Feature")
+
+odds_ratio_sym_load <- data.frame(odds_ratio = exp(coefficients(glm_sym_load)[-1])) %>% as_tibble(rownames = "Feature")
+odds_ratio_ci_sym_load <- data.frame(exp(confint.default(glm_sym_load)[-1,]), check.names = F) %>% as_tibble(rownames = "Feature")
+
+odds_ratio_sym_load %>% inner_join(odds_ratio_ci_sym_load) %>% inner_join(df_coefs_sym_load) %>%
+  writexl::write_xlsx(path = file.path(res_dir, "lasso_coefs_odds_ratios_model6.xlsx"))
+
+odds_ratio_ci_sym_load <- odds_ratio_ci_sym_load %>% as.data.frame()
+
+# Plot odds ratios and CI
+x_labels <- gsub(x = odds_ratio_sym_load %>% pull(Feature), pattern = " ", repl = "\n")
+x_labels <- gsub(x = x_labels, pattern = "`|2", repl = "")
+x_labels <- gsub(x = x_labels, pattern = "sexW", repl = "sex")
+
+pdf(file.path(plt_dir, "odds_ratio_model6.pdf"), width = 20, height = 7)
+par(mgp = c(2.5,1,0), font.lab = 2, mfrow=c(1,1), mar = c(4.1, 4.1, 0.2, 0.2))
+plot(seq_len(nrow(odds_ratio_sym_load)), odds_ratio_sym_load %>% pull(odds_ratio),
+     ylim = c(-1,6), pch = 20, cex = 3, xaxt = "n", xlab = "coefficients",  ylab = "odds ratio")
+sapply(seq_len(nrow(odds_ratio_sym_load)), function(i){
+  arrows(x0=i, y0=odds_ratio_ci_sym_load[i,2], x1=i, y1=odds_ratio_ci_sym_load[i,3], code=3, col="black", lwd=2, angle=90, length=0.25)
+})
+axis(side = 1, at = seq_len(nrow(odds_ratio_sym_load)), labels = x_labels)
+abline(h = 1, lty = 2)
+dev.off()
+
+par(mgp = c(2.5,1,0), font.lab = 2, mfrow=c(1,1), mar = c(4.1, 4.1, 0.2, 0.2))
+plot(seq_len(nrow(odds_ratio_sym_load)), odds_ratio_sym_load %>% pull(odds_ratio),
+     ylim = c(-1,6), pch = 20, cex = 3, xaxt = "n", xlab = "coefficients",  ylab = "odds ratio")
+sapply(seq_len(nrow(odds_ratio_sym_load)), function(i){
+  arrows(x0=i, y0=odds_ratio_ci_sym_load[i,2], x1=i, y1=odds_ratio_ci_sym_load[i,3], code=3, col="black", lwd=2, angle=90, length=0.25)
+})
+axis(side = 1, at = seq_len(nrow(odds_ratio_sym_load)), labels = x_labels)
+abline(h = 1, lty = 2)
+```
+
+**Odds ratio table**
+
+```{r, warning=FALSE, echo=TRUE, message=FALSE, comment=FALSE, results='asis', fig.width = 10, fig.height = 5}
+padj_df <- data.frame(Feature = df_coefs_sym_load$Feature, 
+                      p.adj = p.adjust(df_coefs_sym_load$`Pr(>|z|)`, method = "BY"))
+
+sum_odds_ratio_table_sym_load <- odds_ratio_sym_load %>% 
+                        inner_join(odds_ratio_ci_sym_load) %>% 
+                        inner_join(df_coefs_sym_load) %>%
+                        inner_join(padj_df) %>%
+                        mutate(Feature = case_when(Feature == "symptoms1" ~ "typical symptomatic", 
+                                                   Feature == "symptoms2" ~ "atypical symptomatic",
+                                                   TRUE ~ Feature),
+                               Feature = gsub(x = gsub(x = Feature, pattern = "2", repl = ""), pattern = "sexW", repl = "sex"),
+                               Feature = factor(Feature, levels = c("`viral load`", "typical symptomatic", "atypical symptomatic", "omicron", "`vaccination status`", "sex")))
+
+sum_odds_ratio_table_sym_load %>% 
+  mutate(across(where(is.double), 
+                ~ format(.x, digits = 3, scientific = TRUE))) %>% 
+  knitr::kable()
+```
+
+## Pairwise comparison: viral load and symptoms
+
+```{r, warning=FALSE, echo=TRUE, message=FALSE, comment=FALSE, results = 'asis'}
+df_logit %>% 
+  ggplot2::ggplot(ggplot2::aes(x = symptoms, 
+                               y = `viral load`, 
+                               fill = factor(`test result`))) +
+  ggplot2::stat_boxplot(geom = "errorbar", lwd = 1,show.legend = FALSE, position = ggplot2::position_dodge2(0.9)) +
+  ggplot2::geom_boxplot(color = "black", lwd = 1, show.legend = TRUE, outlier.size = 0, position = ggplot2::position_dodge2(0.8)) +
+  ggbeeswarm::geom_quasirandom(alpha = 0.8, pch = 20, size = 1, dodge.width = .8, color="black",alpha=.5,show.legend = F) +
+  ggplot2::theme_bw() +
+  ggsci::scale_fill_bmj() +
+  ggplot2::theme(axis.text = ggplot2::element_text(size = 14, colour = "black"),
+                 axis.title = ggplot2::element_text(face = "bold", size = 12),
+                 legend.title = ggplot2::element_blank(),
+                 legend.text = ggplot2::element_text(size = 12),
+                 legend.position = "bottom") +
+  ggplot2::xlab("Typical symptoms") +
+  ggplot2::ylab("viral load") +
+  # ggsignif::geom_signif(comparisons = list(c("yes", "no")),
+  #                       annotation = format(wt_res$p.value, scientific = T, digits = 2),
+  #                       tip_length = c(0.2, 0.04)) + 
+  ggplot2::scale_y_continuous(expand = expansion(mult = c(0.05, .1)))
+```
+
+```{r, warning=FALSE, echo=TRUE, message=FALSE, comment=FALSE, results = 'asis'}
+df_test_symp <- df_logit %>% group_by(`test result`, symptoms) %>% dplyr::count() %>% 
+  tidyr::pivot_wider(names_from = symptoms, values_from = n) %>% as.data.frame()
+
+rownames(df_test_symp) <- as.character(df_test_symp[,1])
+df_test_symp <- df_test_symp[,-1]
+
+for(i in seq_len(ncol(df_test_symp))){
+  fisher.test(df_test_symp[,-i][,2:1])
+}
+```
+
+
+## Model 7: viral load + vaccination status
+
+```{tikz model 7 dag, echo=FALSE, fig.cap="DAG: Associated features", fig.ext='png', message=FALSE, warning=FALSE, comment=FALSE}
+\usetikzlibrary{arrows.meta}
+\usetikzlibrary{shapes.geometric, arrows}
+\usetikzlibrary{positioning}
+\tikzset{
+    > = stealth,
+    every node/.append style = {
+        text = black
+    },
+    every path/.append style = {
+        arrows = ->,
+        draw = black,
+        fill = black
+    }
+}
+
+\tikz{
+    \node (y) {test result};
+    \node (a) [below left = of y] {viral load};
+    \node[opacity=0.25] (b) [below = of a] {symptoms};
+    \node[opacity=0.25] (c) [below right = of b] {omicron};
+    \node (d) [right = of c] {vaccination status};
+    \node[draw=gray] (e) [below right = of y] {sex};
+    \path[opacity=0.25] (b) -- (a);
+    \path[dotted,opacity=0.25] (c) -- (a);
+    \path[dotted,opacity=0.25] (c) -- (b);
+    \path[dotted] (d) -- (a);
+    \path[dotted,opacity=0.25] (d) -- (b);
+    \path (a) -- (y);
+    \path[opacity=0.25] (b) -- (y);
+    \path[opacity=0.25] (c) -- (y);
+    \path (d) -- (y);
+    % confounding effects
+    \path[draw=gray] (e) -- (y);
+    \path[draw=gray] (e) -- (a);
+    \path[draw=gray,opacity=0.25] (e) -- (b);
+}
+```
+
+```{r model 7 logistic regression vaccs viral, warning=FALSE, echo=TRUE, message=FALSE, comment=FALSE, results='hide', fig.width = 10, fig.height = 5}
+# Perform final logistic regression with shrinked data set
+glm_vaccs_load <- glm(`test result` ~  `viral load` + `vaccination status` + sex, data = df_logit, family = binomial(link='logit'))
+
+df_coefs_vaccs_load <- as.data.frame(summary(glm_vaccs_load)$coefficients) %>% as_tibble(rownames = "Feature")
+
+odds_ratio_vaccs_load <- data.frame(odds_ratio = exp(coefficients(glm_vaccs_load)[-1])) %>% as_tibble(rownames = "Feature")
+odds_ratio_ci_vaccs_load <- data.frame(exp(confint.default(glm_vaccs_load)), check.names = F)[-1,] %>% as_tibble(rownames = "Feature")
+
+# Store odds ratios and p values of lasso regression
+
+odds_ratio_vaccs_load %>% inner_join(odds_ratio_ci_vaccs_load) %>% inner_join(df_coefs_vaccs_load) %>%
+  writexl::write_xlsx(path = file.path(res_dir, "lasso_coefs_odds_ratios_model7.xlsx"))
+
+odds_ratio_ci_vaccs_load <- odds_ratio_ci_vaccs_load %>% as.data.frame()
+
+# Plot odds ratios and CI
+x_labels <- gsub(x = odds_ratio_vaccs_load %>% pull(Feature), pattern = " ", repl = "\n")
+x_labels <- gsub(x = x_labels, pattern = "`|2", repl = "")
+x_labels <- gsub(x = x_labels, pattern = "sexW", repl = "sex")
+
+pdf(file.path(plt_dir, "odds_ratio_model7.pdf"), width = 20, height = 7)
+par(mgp = c(2.5,1,0), font.lab = 2, mfrow=c(1,1), mar = c(4.1, 4.1, 0.2, 0.2))
+plot(seq_len(nrow(odds_ratio_vaccs_load)), odds_ratio_vaccs_load %>% pull(odds_ratio),
+     ylim = c(-1,6), pch = 20, cex = 3, xaxt = "n", xlab = "coefficients",  ylab = "odds ratio")
+sapply(seq_len(nrow(odds_ratio_vaccs_load)), function(i){
+  arrows(x0=i, y0=odds_ratio_ci_vaccs_load[i,2], x1=i, y1=odds_ratio_ci_vaccs_load[i,3], code=3, col="black", lwd=2, angle=90, length=0.25)
+})
+axis(side = 1, at = seq_len(nrow(odds_ratio_vaccs_load)), labels = x_labels)
+abline(h = 1, lty = 2)
+dev.off()
+
+par(mgp = c(2.5,1,0), font.lab = 2, mfrow=c(1,1), mar = c(4.1, 4.1, 0.2, 0.2))
+plot(seq_len(nrow(odds_ratio_vaccs_load)), odds_ratio_vaccs_load %>% pull(odds_ratio),
+     ylim = c(-1,6), pch = 20, cex = 3, xaxt = "n", xlab = "coefficients",  ylab = "odds ratio")
+sapply(seq_len(nrow(odds_ratio_vaccs_load)), function(i){
+  arrows(x0=i, y0=odds_ratio_ci_vaccs_load[i,2], x1=i, y1=odds_ratio_ci_vaccs_load[i,3], code=3, col="black", lwd=2, angle=90, length=0.25)
+})
+axis(side = 1, at = seq_len(nrow(odds_ratio_vaccs_load)), labels = x_labels)
+abline(h = 1, lty = 2)
+```
+
+**Odds ratio table**
+
+```{r, warning=FALSE, echo=TRUE, message=FALSE, comment=FALSE, results='asis', fig.width = 10, fig.height = 5}
+padj_df <- data.frame(Feature = df_coefs_vaccs_load$Feature, 
+                      p.adj = p.adjust(df_coefs_vaccs_load$`Pr(>|z|)`, method = "BY"))
+
+sum_odds_ratio_table_vaccs_load <- odds_ratio_vaccs_load %>% 
+                        inner_join(odds_ratio_ci_vaccs_load) %>% 
+                        inner_join(df_coefs_vaccs_load) %>%
+                        inner_join(padj_df) %>%
+                        mutate(Feature = case_when(Feature == "symptoms1" ~ "typical symptomatic", 
+                                                   Feature == "symptoms2" ~ "atypical symptomatic",
+                                                   TRUE ~ Feature),
+                               Feature = gsub(x = gsub(x = Feature, pattern = "2", repl = ""), pattern = "sexW", repl = "sex"),
+                               Feature = factor(Feature, levels = c("`viral load`", "typical symptomatic", "atypical symptomatic", "omicron", "`vaccination status`", "sex")))
+
+sum_odds_ratio_table_vaccs_load %>% 
+  mutate(across(where(is.double), 
+                ~ format(.x, digits = 3, scientific = TRUE))) %>% 
+  knitr::kable()
+```
+
+
+## Model 8: vaccination status and symptoms
+
+
+```{tikz model 8 dag, echo=FALSE, fig.cap="DAG: Associated features", fig.ext='png', message=FALSE, warning=FALSE, comment=FALSE}
+\usetikzlibrary{arrows.meta}
+\usetikzlibrary{shapes.geometric, arrows}
+\usetikzlibrary{positioning}
+\tikzset{
+    > = stealth,
+    every node/.append style = {
+        text = black
+    },
+    every path/.append style = {
+        arrows = ->,
+        draw = black,
+        fill = black
+    }
+}
+
+\tikz{
+    \node (y) {test result};
+    \node[opacity=0.25] (a) [below left = of y] {viral load};
+    \node (b) [below = of a] {symptoms};
+    \node[opacity=0.25] (c) [below right = of b] {omicron};
+    \node (d) [right = of c] {vaccination status};
+    \node[draw=gray] (e) [below right = of y] {sex};
+    \path[dotted,opacity=0.25] (b) -- (a);
+    \path[dotted,opacity=0.25] (a) -- (b);
+    \path[dotted,opacity=0.25] (c) -- (a);
+    \path[dotted,opacity=0.25] (c) -- (b);
+    \path[dotted,opacity=0.25] (d) -- (a);
+    \path[dotted] (d) -- (b);
+    \path[opacity=0.25] (a) -- (y);
+    \path (b) -- (y);
+    \path[opacity=0.25] (c) -- (y);
+    \path (d) -- (y);
+    % confounding effects
+    \path[draw=gray] (e) -- (y);
+    \path[draw=gray,opacity=0.25] (e) -- (a);
+    \path[draw=gray] (e) -- (b);
+}
+```
+
+```{r model 8 logistic regression vaccs sym, warning=FALSE, echo=TRUE, message=FALSE, comment=FALSE, results='hide', fig.width = 10, fig.height = 5}
+# Perform final logistic regression with shrinked data set
+glm_vaccs_sym <- glm(`test result` ~  `vaccination status` + symptoms + sex, data = df_logit, family = binomial(link='logit'))
+
+df_coefs_vaccs_sym <- as.data.frame(summary(glm_vaccs_sym)$coefficients) %>% as_tibble(rownames = "Feature")
+
+odds_ratio_vaccs_sym <- data.frame(odds_ratio = exp(coefficients(glm_vaccs_sym)[-1])) %>% as_tibble(rownames = "Feature")
+odds_ratio_ci_vaccs_sym <- data.frame(exp(confint.default(glm_vaccs_sym)), check.names = F)[-1,] %>% as_tibble(rownames = "Feature")
+
+# Store odds ratios and p values of lasso regression
+
+odds_ratio_vaccs_sym %>% inner_join(odds_ratio_ci_vaccs_sym) %>% inner_join(df_coefs_vaccs_sym) %>%
+  writexl::write_xlsx(path = file.path(res_dir, "lasso_coefs_odds_ratios_model8.xlsx"))
+
+odds_ratio_ci_vaccs_sym <- odds_ratio_ci_vaccs_sym %>% as.data.frame()
+
+# Plot odds ratios and CI
+
+x_labels <- gsub(x = odds_ratio_vaccs_sym %>% pull(Feature), pattern = " ", repl = "\n")
+x_labels <- gsub(x = x_labels, pattern = "`|2", repl = "")
+x_labels <- gsub(x = x_labels, pattern = "sexW", repl = "sex")
+
+pdf(file.path(plt_dir, "odds_ratio_model8.pdf"), width = 20, height = 7)
+par(mgp = c(2.5,1,0), font.lab = 2, mfrow=c(1,1), mar = c(4.1, 4.1, 0.2, 0.2))
+plot(seq_len(nrow(odds_ratio_vaccs_sym)), odds_ratio_vaccs_sym %>% pull(odds_ratio),
+     ylim = c(-1,6), pch = 20, cex = 3, xaxt = "n", xlab = "coefficients",  ylab = "odds ratio")
+sapply(seq_len(nrow(odds_ratio_vaccs_sym)), function(i){
+  arrows(x0=i, y0=odds_ratio_ci_vaccs_sym[i,2], x1=i, y1=odds_ratio_ci_vaccs_sym[i,3], code=3, col="black", lwd=2, angle=90, length=0.25)
+})
+axis(side = 1, at = seq_len(nrow(odds_ratio_vaccs_sym)), labels = x_labels)
+abline(h = 1, lty = 2)
+dev.off()
+
+par(mgp = c(2.5,1,0), font.lab = 2, mfrow=c(1,1), mar = c(4.1, 4.1, 0.2, 0.2))
+plot(seq_len(nrow(odds_ratio_vaccs_sym)), odds_ratio_vaccs_sym %>% pull(odds_ratio),
+     ylim = c(-1,6), pch = 20, cex = 3, xaxt = "n", xlab = "coefficients",  ylab = "odds ratio")
+sapply(seq_len(nrow(odds_ratio_vaccs_sym)), function(i){
+  arrows(x0=i, y0=odds_ratio_ci_vaccs_sym[i,2], x1=i, y1=odds_ratio_ci_vaccs_sym[i,3], code=3, col="black", lwd=2, angle=90, length=0.25)
+})
+axis(side = 1, at = seq_len(nrow(odds_ratio_vaccs_sym)), labels = x_labels)
+abline(h = 1, lty = 2)
+```
+
+**Odds ratio table**
+
+```{r, warning=FALSE, echo=TRUE, message=FALSE, comment=FALSE, results='asis', fig.width = 10, fig.height = 5}
+padj_df <- data.frame(Feature = df_coefs_vaccs_sym$Feature, 
+                      p.adj = p.adjust(df_coefs_vaccs_sym$`Pr(>|z|)`, method = "BY"))
+
+sum_odds_ratio_table_vaccs_sym <- odds_ratio_vaccs_sym %>% 
+                        inner_join(odds_ratio_ci_vaccs_sym) %>% 
+                        inner_join(df_coefs_vaccs_sym) %>%
+                        inner_join(padj_df) %>%
+                        mutate(Feature = case_when(Feature == "symptoms1" ~ "typical symptomatic", 
+                                                   Feature == "symptoms2" ~ "atypical symptomatic",
+                                                   TRUE ~ Feature),
+                               Feature = gsub(x = gsub(x = Feature, pattern = "2", repl = ""), pattern = "sexW", repl = "sex"),
+                               Feature = factor(Feature, levels = c("`viral load`", "typical symptomatic", "atypical symptomatic", "omicron", "`vaccination status`", "sex")))
+
+sum_odds_ratio_table_vaccs_sym %>% 
+  mutate(across(where(is.double), 
+                ~ format(.x, digits = 3, scientific = TRUE))) %>% 
+  knitr::kable()
+```
+
+
+# Summarized models
+
+```{r, warning=FALSE, echo=TRUE, message=FALSE, comment=FALSE}
+
+sum_odds_ratio_table_load <- sum_odds_ratio_table_load %>% 
+                                mutate(type = if_else(Feature %in% c("`viral load`", "typical symptomatic", "atypical symptomatic", "omicron", "`vaccination status`"), 
+                                                      true = "covariate", false = "confounding"),
+                                       type = factor(type, levels = c("covariate", "confounding"))) %>% 
+                                arrange(type, Feature) 
+
+sum_odds_ratio_table_omic <- sum_odds_ratio_table_omic %>% 
+                                mutate(type = if_else(Feature %in% c("`viral load`", "typical symptomatic", "atypical symptomatic", "omicron", "`vaccination status`"), 
+                                                      true = "covariate", false = "confounding"),
+                                       type = factor(type, levels = c("covariate", "confounding"))) %>% 
+                                arrange(type, Feature) 
+
+sum_odds_ratio_table_symp <- sum_odds_ratio_table_symp %>% 
+                                mutate(type = if_else(Feature %in% c("`viral load`", "typical symptomatic", "atypical symptomatic", "omicron", "`vaccination status`"), 
+                                                      true = "covariate", false = "confounding"),
+                                       type = factor(type, levels = c("covariate", "confounding"))) %>% 
+                                arrange(type, Feature) 
+                                                           
+sum_odds_ratio_table_vaccs <- sum_odds_ratio_table_vaccs %>% 
+                                mutate(type = if_else(Feature %in% c("`viral load`", "typical symptomatic", "atypical symptomatic", "omicron", "`vaccination status`"), 
+                                                      true = "covariate", false = "confounding"),
+                                       type = factor(type, levels = c("covariate", "confounding"))) %>% 
+                                arrange(type, Feature) 
+                                                           
+sum_odds_ratio_table_sym_load <- sum_odds_ratio_table_sym_load %>% 
+                                mutate(type = if_else(Feature %in% c("`viral load`", "typical symptomatic", "atypical symptomatic", "omicron", "`vaccination status`"), 
+                                                      true = "covariate", false = "confounding"),
+                                       type = factor(type, levels = c("covariate", "confounding"))) %>% 
+                                arrange(type, Feature) 
+
+sum_odds_ratio_table_vaccs_load <- sum_odds_ratio_table_vaccs_load %>% 
+                                mutate(type = if_else(Feature %in% c("`viral load`", "typical symptomatic", "atypical symptomatic", "omicron", "`vaccination status`"), 
+                                                      true = "covariate", false = "confounding"),
+                                       type = factor(type, levels = c("covariate", "confounding"))) %>% 
+                                arrange(type, Feature)                             
+                                                           
+sum_odds_ratio_table_vaccs_sym <- sum_odds_ratio_table_vaccs_sym %>% 
+                                mutate(type = if_else(Feature %in% c("`viral load`", "typical symptomatic", "atypical symptomatic", "omicron", "`vaccination status`"), 
+                                                      true = "covariate", false = "confounding"),
+                                       type = factor(type, levels = c("covariate", "confounding"))) %>% 
+                                arrange(type, Feature)                                                       
+                                                           
+
+sum_odds_ratio_table <- sum_odds_ratio_table %>% 
+                                mutate(type = if_else(Feature %in% c("`viral load`", "typical symptomatic", "atypical symptomatic", "omicron", "`vaccination status`"), 
+                                                      true = "covariate", false = "confounding"),
+                                       type = factor(type, levels = c("covariate", "confounding"))) %>% 
+                                arrange(type, Feature) 
+
+list_sum_tables <- list(sum_odds_ratio_table,
+                        sum_odds_ratio_table_load, 
+                        sum_odds_ratio_table_symp,
+                        sum_odds_ratio_table_omic,
+                        sum_odds_ratio_table_vaccs,
+                        sum_odds_ratio_table_sym_load,
+                        sum_odds_ratio_table_vaccs_load,
+                        sum_odds_ratio_table_vaccs_sym)
+                                                
+sum_table_test_results <- do.call("rbind", list_sum_tables)
+
+sum_table_test_results <- sum_table_test_results %>% dplyr::rename("p value" = `Pr(>|z|)`)
+sum_table_test_results$p.adj <- p.adjust(sum_table_test_results$`p value`, method = "BY")
+
+index_line <- cumsum(unlist(lapply(list_sum_tables, nrow))) + 1
+                       
+knitr::kable(sum_table_test_results %>% 
+              mutate(across(where(is.double), 
+                    ~ format(.x, digits = 3, scientific = TRUE)))) %>%
+  kable_paper("striped", full_width = F) %>%
+   kableExtra::pack_rows(group_label = "Model 1", 1, index_line[1],hline_after = T, indent = F) %>% 
+   kableExtra::pack_rows(group_label = "Model 2", start_row = index_line[1], end_row = index_line[2], hline_after = T, indent = F) %>% 
+   kableExtra::pack_rows(group_label = "Model 3", start_row = index_line[2], end_row = index_line[3]-1, hline_after = T, indent = F) %>%
+   kableExtra::pack_rows(group_label = "Model 4", start_row = index_line[3], end_row = index_line[4]-1, hline_after = T, indent = F) %>%
+   kableExtra::pack_rows(group_label = "Model 5", start_row = index_line[4], end_row = index_line[5]-1, hline_after = T, indent = F) %>%
+   kableExtra::pack_rows(group_label = "Model 6", start_row = index_line[5], end_row = index_line[6]-1, hline_after = T, indent = F) %>%
+   kableExtra::pack_rows(group_label = "Model 7", start_row = index_line[6], end_row = index_line[7]-1, hline_after = T, indent = F) %>%
+   kableExtra::pack_rows(group_label = "Model 8", start_row = index_line[7], end_row = index_line[8]-1, hline_after = T, indent = F) %>%
+   kable_styling()%>%
+   row_spec(c(1:5, index_line[1], index_line[2] + 0:1, index_line[3], index_line[4],
+              index_line[5] + 0:2, index_line[6] + 0:1, index_line[7] + 0:2), 
+              bold=T, hline_after = T)
+```
+
+```{tikz all models dag, echo=FALSE, fig.cap="DAG: Associated features", fig.ext='png', message=FALSE, warning=FALSE, comment=FALSE}
+\usetikzlibrary{arrows.meta}
+\usetikzlibrary{shapes.geometric, arrows}
+\usetikzlibrary{positioning}
+\tikzset{
+    > = stealth,
+    every node/.append style = {
+        text = black
+    },
+    every path/.append style = {
+        arrows = ->,
+        draw = black,
+        fill = black
+    }
+}
+
+\tikz{
+    \node (y) {test result};
+    \node (a) [below left = of y] {viral load};
+    \node (b) [below = of a] {symptoms};
+    \node (c) [below right = of b] {omicron};
+    \node (d) [right = of c] {vaccination status};
+    \node[draw=gray] (e) [below right = of y] {sex};
+    \path (b) -- (a);
+    \path[dotted] (c) -- (a);
+    \path[dotted] (c) -- (b);
+    \path[dashed] (d) -- (b);
+    \path (a) -- (y);
+    \path (b) -- (y);
+    \path (c) -- (y);
+    \path (d) -- (y);
+    % confounding effects
+    \path[draw=gray] (e) -- (y);
+    \path[draw=gray] (e) -- (a);
+    \path[draw=gray] (e) -- (b);
+}
+```
+
+
+```{r, warning=FALSE, echo=TRUE, message=FALSE, comment=FALSE, results='hide', fig.width = 22, fig.height = 5}
+odds_ratios_covariates <- sum_table_test_results %>% filter(type == "covariate") %>% as.data.frame()
+x_labels <- gsub(x = odds_ratios_covariates %>% pull(Feature), pattern = " ", repl = "\n")
+x_labels <- gsub(x = x_labels, pattern = "`|2", repl = "")
+x_labels <- gsub(x = x_labels, pattern = "sexW", repl = "sex")
+
+par(mgp = c(2.5,1,0), font.lab = 2, mfrow=c(1,1), mar = c(10.1, 4.1, 0.2, 0.2))
+plot(odds_ratios_covariates$odds_ratio,
+     ylim = c(0, 6), pch = 20, cex = 3, xaxt = "n", xlab = "",  ylab = "odds ratio")
+sapply(seq_len(nrow(odds_ratios_covariates)), function(i){
+  arrows(x0=i, y0=odds_ratios_covariates$`2.5 %`[i], x1=i, y1=odds_ratios_covariates$`97.5 %`[i], code=3, col="black", lwd=2, angle=90, length=0.1)
+})
+axis(side = 1, at = seq_len(nrow(odds_ratios_covariates)), labels = x_labels, las = 1, mgp = c(3, 2, 0))
+abline(h = 1, lty = 2)
+abline(v = cumsum(unlist(lapply(list_sum_tables, function(tab) nrow(tab %>% filter(type %in% "covariate"))))) + 0.5, lty = 2)
+
+pdf(file.path(plt_dir, "Odds_ratio_all_models.pdf"), width = 22, height = 5)
+odds_ratios_covariates <- sum_table_test_results %>% filter(type == "covariate") %>% as.data.frame()
+
+par(mgp = c(2.5,1,0), font.lab = 2, mfrow=c(1,1), mar = c(10.1, 4.1, 0.2, 0.2))
+plot(odds_ratios_covariates$odds_ratio,
+     ylim = c(0, 6), pch = 20, cex = 3, xaxt = "n", xlab = "",  ylab = "odds ratio")
+sapply(seq_len(nrow(odds_ratios_covariates)), function(i){
+  arrows(x0=i, y0=odds_ratios_covariates$`2.5 %`[i], x1=i, y1=odds_ratios_covariates$`97.5 %`[i], code=3, col="black", lwd=2, angle=90, length=0.1)
+})
+axis(side = 1, at = seq_len(nrow(odds_ratios_covariates)), labels = x_labels, las = 1, mgp = c(3, 2, 0))
+abline(h = 1, lty = 2)
+abline(v = cumsum(unlist(lapply(list_sum_tables, function(tab) nrow(tab %>% filter(type %in% "covariate"))))) + 0.5, lty = 2)
+dev.off()
 ```
 
 # Associated factors with symptom response
@@ -306,8 +1228,8 @@ if(!dir.exists(res_dir)){
   dir.create(res_dir)
 }
 
-df <- df %>% dplyr::select(-`viral load`, -`test result`) %>%
-             mutate(symptoms = if_else(symptoms == 1, true = 1, false = 0))
+df <- df %>% dplyr::select( -`test result`, -manufacturer, -`viral load`) %>% 
+              mutate(symptoms = if_else(symptoms == 1, true = 1, false = 0)) 
 ```
 
 ## Logistic regression
@@ -320,9 +1242,9 @@ Logistic regression requires there to be little or no multicollinearity among th
 ```{r, warning=FALSE, echo=TRUE, message=FALSE, comment=FALSE, results = 'hide', fig.width=8, fig.height=8}
 df_box_tid <- df %>% dplyr::mutate(omicron = as.numeric(omicron),
                            `vaccination status` = as.numeric(`vaccination status`),
-                           genderW = if_else(gender == "W", true = 1, false = 0)) %>%
+                           sexW = if_else(sex == "W", true = 1, false = 0)) %>%
                                # age = if_else(age == 0, true = 0.5, false = age)) %>%
-                dplyr::select(-gender)
+                dplyr::select(-sex)
 
 png(filename = file.path(plt_dir, paste0("Scatter_all_pairs.png")),units="px", width=5000, height=5000, res=300)
 pairs(df_box_tid %>% dplyr::select(-ID, -symptoms), lower.panel = panel.cor, pch = 20)
@@ -336,7 +1258,7 @@ pairs(df_box_tid %>% dplyr::select(-ID, -symptoms), lower.panel = panel.cor, pch
 Check with Box-Tidwell test with transformed continuous variables
 
 ```{r, warning=FALSE, echo=TRUE, message=FALSE, comment=FALSE, results = 'asis', fig.width = 10, fig.height = 5}
-lreg <- glm(symptoms ~ age + ageTrans + genderW  + `vaccination status` + omicron, 
+lreg <- glm(symptoms ~ age + ageTrans + sexW  + `vaccination status` + omicron, 
             data = df_box_tid %>% mutate(ageTrans = age * log(age)), 
             family=binomial(link="logit"))
 
@@ -352,7 +1274,7 @@ as.data.frame(summary(lreg)$coefficients) %>%
 **Visual check of age shows linear relationship**
 
 ```{r, warning=FALSE, echo=TRUE, message=FALSE, comment=FALSE, results = 'asis', fig.width = 8, fig.height = 6}
-logit_model <- glm(symptoms ~ age + genderW + `vaccination status` + omicron, 
+logit_model <- glm(symptoms ~ age + sexW + `vaccination status` + omicron, 
                    data = df_box_tid, 
                    family=binomial(link="logit"))
 
@@ -396,7 +1318,7 @@ df4test %>%
   
 ```
 
-## Pairwise comparison: Age and Symptoms
+## Pairwise comparison: age and symptoms
 
 ```{r, warning=FALSE, echo=TRUE, message=FALSE, comment=FALSE, results = 'asis'}
 df4test <- df_box_tid %>% 
@@ -432,7 +1354,7 @@ df <- df %>% dplyr::select(-age)
 
 y <- df %>% pull(symptoms)
 X <- df %>% dplyr::select(-ID, -symptoms) %>%
-            dplyr::mutate(gender = factor(gender, levels = c("M", "W")),
+            dplyr::mutate(sex = factor(sex, levels = c("M", "W")),
                           `vaccination status` = as.factor(as.numeric(`vaccination status`)))
 X_lasso <- X %>% mutate(across(where(is.factor), .fns = as.integer)) %>% as.matrix()
 
@@ -447,24 +1369,24 @@ lasso_cv <- glmnet::cv.glmnet(x = X_lasso, y = y, family = "binomial", alpha = 1
 model_all_lambdas <- glmnet::glmnet(x = X_lasso, y = y, family = "binomial", alpha = 1, nfolds = 10, lambda = lambdas2try)
 par(mfcol = c(1,2), mar=c(5,4.,2.,1)+0.1, font.lab = 2)
 plot(lasso_cv)
-put.fig.letter(label="A", location="topleft", font=2, cex = 1.5)
+put.fig.letter(label="a", location="topleft", font=1, cex = 1.5)
 matplot(log(model_all_lambdas$lambda), t(as.matrix(model_all_lambdas$beta)), type = "l", lty = rep(c(1,2), each = 9), col = RColorBrewer::brewer.pal(6,"Dark2"), lwd = 2,
         xlab = parse(text = ("Log(lambda)")), ylab = "Value of coefficients")
 legend("topright", lty = rep(c(1,2), each = 9), col = rep(RColorBrewer::brewer.pal(6,"Dark2"), 2) , lwd = 1.5, cex = .7,
-       legend = rownames(model_all_lambdas$beta))
-put.fig.letter(label="B", location="topleft", font=2, cex = 1.5)
+       legend = rownames(model_all_lambdas$beta), bty = "n")
+put.fig.letter(label="b", location="topleft", font=1, cex = 1.5)
 ```
 
 ```{r, warning=FALSE, echo=TRUE, message=FALSE, comment=FALSE, results = 'asis'}
-pdf(file.path(plt_dir, "LASSO_REGRESSION.pdf"), width = 10, height = 4)
+pdf(file.path(plt_dir, "LASSO_REGRESSION.pdf"), height = 5)
 par(mfcol = c(1,2), mar=c(5,4.,2.,1)+0.1, font.lab = 2)
 plot(lasso_cv)
-put.fig.letter(label="A", location="topleft", font=2, cex = 1.5)
+put.fig.letter(label="a", location="topleft", font=1, cex = 1.5)
 matplot(log(model_all_lambdas$lambda), t(as.matrix(model_all_lambdas$beta)), type = "l", lty = rep(c(1,2), each = 9), col = RColorBrewer::brewer.pal(6,"Dark2"), lwd = 2,
         xlab = parse(text = ("Log(lambda)")), ylab = "Value of coefficients")
 legend("topright", lty = rep(c(1,2), each = 9), col = rep(RColorBrewer::brewer.pal(6,"Dark2"), 2) , lwd = 1.5, cex = .7,
-       legend = rownames(model_all_lambdas$beta))
-put.fig.letter(label="B", location="topleft", font=2, cex = 1.5)
+       legend = rownames(model_all_lambdas$beta), bty = "n")
+put.fig.letter(label="b", location="topleft", font=1, cex = 1.5)
 dev.off()
 ```
 
@@ -494,15 +1416,42 @@ ggplot2::ggsave(plot = roc_plt$roc_plot, filename = file.path(plt_dir, "ROC_curv
 lasso_vars_gt_zero <- rownames(model_all_lambdas$beta)[as.matrix(model_all_lambdas$beta)[,1] != 0]
 ```
 
-## Final logistic regression based on selected features
+## Model 1: all factors after lasso
+
+Remaining factors: `r paste0(lasso_vars_gt_zero, collapse = ", ")`
+
+```{tikz model 1 dag, echo=FALSE, fig.cap="DAG: Associated features", fig.ext='png', message=FALSE, warning=FALSE, comment=FALSE}
+\usetikzlibrary{arrows.meta}
+\usetikzlibrary{shapes.geometric, arrows}
+\usetikzlibrary{positioning}
+\tikzset{
+    > = stealth,
+    every node/.append style = {
+        text = black
+    },
+    every path/.append style = {
+        arrows = ->,
+        draw = black,
+        fill = black
+    }
+}
+
+\tikz{
+    \node (y) {symptoms};
+    \node (a) [below left = of y] {vaccination status};
+    \node (b) [below = of y] {omicron};
+    \node (c) [below right = of y] {sex};
+    \path (a) -- (y);
+    \path (b) -- (y);
+    \path (c) -- (y);
+}
+```
 
 ### Odds ratios
 
-`r paste0(lasso_vars_gt_zero, collapse = ", ")`
-
 ```{r, warning=FALSE, echo=TRUE, message=FALSE, comment=FALSE, results='hide', fig.width = 10, fig.height = 5}
 df_logit <- df %>% dplyr::select(symptoms, matches(paste0(lasso_vars_gt_zero, collapse = "|"))) %>%
-            dplyr::mutate(gender = factor(gender, levels = c("M", "W")),
+            dplyr::mutate(sex = factor(sex, levels = c("M", "W")),
                           `vaccination status` = as.factor(as.numeric(`vaccination status`)),
                           symptoms = factor(symptoms))
 
@@ -517,16 +1466,16 @@ odds_ratio_ci <- data.frame(exp(confint.default(glm_full)[-1,]), check.names = F
 # Store odds ratios and p values of lasso regression
 
 odds_ratio %>% inner_join(odds_ratio_ci) %>% inner_join(df_coefs) %>%
-  writexl::write_xlsx(path = file.path(res_dir, "lasso_coefs_odds_ratios.xlsx"))
+  writexl::write_xlsx(path = file.path(res_dir, "lasso_coefs_odds_ratios_symptoms_model1.xlsx"))
 
 odds_ratio_ci <- odds_ratio_ci %>% as.data.frame()
 
 # Plot odds ratios and CI
 
-pdf(file.path(plt_dir, "odds_ratio.pdf"), width = 20, height = 7)
+pdf(file.path(plt_dir, "odds_ratio_symptoms_model1.pdf"), width = 20, height = 7)
 par(mgp = c(2.5,1,0), font.lab = 2, mfrow=c(1,1), mar = c(4.1, 4.1, 0.2, 0.2))
 plot(seq_len(nrow(odds_ratio)), odds_ratio %>% pull(odds_ratio),
-     ylim = c(-1,5), pch = 20, cex = 3, xaxt = "n", xlab = "coefficients",  ylab = "odds ratio")
+     ylim = c(0, 2.5), pch = 20, cex = 3, xaxt = "n", xlab = "coefficients",  ylab = "odds ratio")
 sapply(seq_len(nrow(odds_ratio)), function(i){
   arrows(x0=i, y0=odds_ratio_ci[i,2], x1=i, y1=odds_ratio_ci[i,3], code=3, col="black", lwd=2, angle=90, length=0.25)
 })
@@ -544,7 +1493,7 @@ sample_sizes_df <- df_logit %>%
   group_by(feature) %>%
   mutate(rel = n/sum(n))
   
-writexl::write_xlsx(sample_sizes_df, path = file.path(res_dir, "sample_sizes_for_features.xlsx"))
+writexl::write_xlsx(sample_sizes_df, path = file.path(res_dir, "sample_sizes_for_features_symptoms_model1.xlsx"))
 
 par(mgp = c(2.5,1,0), font.lab = 2, mfrow=c(1,1), mar = c(4.1, 4.1, 0.2, 0.2))
 plot(seq_len(nrow(odds_ratio)), odds_ratio %>% pull(odds_ratio),
@@ -555,7 +1504,6 @@ sapply(seq_len(nrow(odds_ratio)), function(i){
 axis(side = 1, at = seq_len(nrow(odds_ratio)), labels = odds_ratio %>% pull(Feature))
 abline(h = 1, lty = 2)
 ```
-
 
 
 ```{r, warning=FALSE, echo=TRUE, message=FALSE, comment=FALSE, results='asis', fig.width = 10, fig.height = 5}
@@ -581,6 +1529,283 @@ knitr::kable()
 
 ```
 
+## Model 2: vaccination status
+
+```{tikz sym model 2 dag, echo=FALSE, fig.cap="DAG: Associated features", fig.ext='png', message=FALSE, warning=FALSE, comment=FALSE}
+\usetikzlibrary{arrows.meta}
+\usetikzlibrary{shapes.geometric, arrows}
+\usetikzlibrary{positioning}
+\tikzset{
+    > = stealth,
+    every node/.append style = {
+        text = black
+    },
+    every path/.append style = {
+        arrows = ->,
+        draw = black,
+        fill = black
+    }
+}
+
+\tikz{
+    \node (y) {symptoms};
+    \node (a) [below left = of y] {vaccination status};
+    \node[opacity=0.25] (b) [below = of y] {omicron};
+    \node[opacity=0.25] (c) [below right = of y] {sex};
+    \path (a) -- (y);
+    \path[opacity=0.25] (b) -- (y);
+    \path[opacity=0.25] (c) -- (y);
+}
+```
+
+```{r, warning=FALSE, echo=TRUE, message=FALSE, comment=FALSE, results='hide', fig.width = 10, fig.height = 5}
+glm_full_vaccs <- glm(symptoms ~ `vaccination status`, data = df_logit, family=binomial(link='logit'))
+
+df_coefs_vaccs <- as.data.frame(summary(glm_full_vaccs)$coefficients) %>% as_tibble(rownames = "Feature")
+
+odds_ratio_vaccs <- data.frame(odds_ratio = exp(coefficients(glm_full_vaccs)[-1])) %>% as_tibble(rownames = "Feature")
+odds_ratio_ci_vaccs <- data.frame(exp(confint.default(glm_full_vaccs)), check.names = F)[-1,] %>% as_tibble(rownames = "Feature")
+
+# Store odds ratios and p values of lasso regression
+
+odds_ratio_vaccs %>% inner_join(odds_ratio_ci_vaccs) %>% inner_join(df_coefs_vaccs) %>%
+  writexl::write_xlsx(path = file.path(res_dir, "lasso_coefs_odds_ratios_symptoms_model2.xlsx"))
+
+odds_ratio_ci_vaccs <- odds_ratio_ci_vaccs %>% as.data.frame()
+```
+
+
+```{r, warning=FALSE, echo=TRUE, message=FALSE, comment=FALSE, results='asis', fig.width = 10, fig.height = 5}
+padj_df_vaccs <- data.frame(Feature = df_coefs_vaccs$Feature, 
+                      p.adj = p.adjust(df_coefs_vaccs$`Pr(>|z|)`, method = "BY"))
+
+sum_odds_ratio_table_vaccs <- odds_ratio_vaccs %>% 
+                        inner_join(odds_ratio_ci_vaccs) %>% 
+                        inner_join(df_coefs_vaccs) %>%
+                        inner_join(padj_df_vaccs)
+
+sum_odds_ratio_table_vaccs %>% 
+  mutate(across(where(is.double), 
+                ~ format(.x, digits = 3, scientific = TRUE))) %>% 
+  knitr::kable()
+```
+
+## Model 3: omicron
+
+```{tikz sym model 3 dag, echo=FALSE, fig.cap="DAG: Associated features", fig.ext='png', message=FALSE, warning=FALSE, comment=FALSE}
+\usetikzlibrary{arrows.meta}
+\usetikzlibrary{shapes.geometric, arrows}
+\usetikzlibrary{positioning}
+\tikzset{
+    > = stealth,
+    every node/.append style = {
+        text = black
+    },
+    every path/.append style = {
+        arrows = ->,
+        draw = black,
+        fill = black
+    }
+}
+
+\tikz{
+    \node (y) {symptoms};
+    \node[opacity=0.25] (a) [below left = of y] {vaccination status};
+    \node (b) [below = of y] {omicron};
+    \node[opacity=0.25] (c) [below right = of y] {sex};
+    \path[opacity=0.25] (a) -- (y);
+    \path (b) -- (y);
+    \path[opacity=0.25] (c) -- (y);
+}
+```
+
+```{r, warning=FALSE, echo=TRUE, message=FALSE, comment=FALSE, results='hide', fig.width = 10, fig.height = 5}
+glm_full_omicron <- glm(symptoms ~ omicron, data = df_logit, family=binomial(link='logit'))
+
+df_coefs_omicron <- as.data.frame(summary(glm_full_omicron)$coefficients) %>% as_tibble(rownames = "Feature")
+
+odds_ratio_omicron <- data.frame(odds_ratio = exp(coefficients(glm_full_omicron)[-1])) %>% as_tibble(rownames = "Feature")
+odds_ratio_ci_omicron <- data.frame(exp(confint.default(glm_full_omicron)), check.names = F)[-1,] %>% as_tibble(rownames = "Feature")
+
+# Store odds ratios and p values of lasso regression
+
+odds_ratio_omicron %>% inner_join(odds_ratio_ci_omicron) %>% inner_join(df_coefs_omicron) %>%
+  writexl::write_xlsx(path = file.path(res_dir, "lasso_coefs_odds_ratios_symptoms_model3.xlsx"))
+
+odds_ratio_ci_omicron <- odds_ratio_ci_omicron %>% as.data.frame()
+```
+
+
+```{r, warning=FALSE, echo=TRUE, message=FALSE, comment=FALSE, results='asis', fig.width = 10, fig.height = 5}
+padj_df_omicron <- data.frame(Feature = df_coefs_omicron$Feature, 
+                      p.adj = p.adjust(df_coefs_omicron$`Pr(>|z|)`, method = "BY"))
+
+sum_odds_ratio_table_omicron <- odds_ratio_omicron %>% 
+                        inner_join(odds_ratio_ci_omicron) %>% 
+                        inner_join(df_coefs_omicron) %>%
+                        inner_join(padj_df_omicron)
+
+sum_odds_ratio_table_omicron %>% 
+  mutate(across(where(is.double), 
+                ~ format(.x, digits = 3, scientific = TRUE))) %>% 
+  knitr::kable()
+```
+
+## Model 4: sex
+
+```{tikz sym model 4 dag, echo=FALSE, fig.cap="DAG: Associated features", fig.ext='png', message=FALSE, warning=FALSE, comment=FALSE}
+\usetikzlibrary{arrows.meta}
+\usetikzlibrary{shapes.geometric, arrows}
+\usetikzlibrary{positioning}
+\tikzset{
+    > = stealth,
+    every node/.append style = {
+        text = black
+    },
+    every path/.append style = {
+        arrows = ->,
+        draw = black,
+        fill = black
+    }
+}
+
+\tikz{
+    \node (y) {symptoms};
+    \node[opacity=0.25] (a) [below left = of y] {vaccination status};
+    \node[opacity=0.25] (b) [below = of y] {omicron};
+    \node (c) [below right = of y] {sex};
+    \path[opacity=0.25] (a) -- (y);
+    \path[opacity=0.25] (b) -- (y);
+    \path (c) -- (y);
+}
+```
+
+```{r, warning=FALSE, echo=TRUE, message=FALSE, comment=FALSE, results='hide', fig.width = 10, fig.height = 5}
+glm_full_sex <- glm(symptoms ~ sex, data = df_logit, family=binomial(link='logit'))
+
+df_coefs_sex <- as.data.frame(summary(glm_full_sex)$coefficients) %>% as_tibble(rownames = "Feature")
+
+odds_ratio_sex <- data.frame(odds_ratio = exp(coefficients(glm_full_sex)[-1])) %>% as_tibble(rownames = "Feature")
+odds_ratio_ci_sex <- data.frame(exp(confint.default(glm_full_sex)), check.names = F)[-1,] %>% as_tibble(rownames = "Feature")
+
+# Store odds ratios and p values of lasso regression
+
+odds_ratio_sex %>% inner_join(odds_ratio_ci_sex) %>% inner_join(df_coefs_sex) %>%
+  writexl::write_xlsx(path = file.path(res_dir, "lasso_coefs_odds_ratios_symptoms_model4.xlsx"))
+
+odds_ratio_ci_sex <- odds_ratio_ci_sex %>% as.data.frame()
+```
+
+
+```{r, warning=FALSE, echo=TRUE, message=FALSE, comment=FALSE, results='asis', fig.width = 10, fig.height = 5}
+padj_df_sex <- data.frame(Feature = df_coefs_sex$Feature, 
+                      p.adj = p.adjust(df_coefs_sex$`Pr(>|z|)`, method = "BY"))
+
+sum_odds_ratio_table_sex <- odds_ratio_sex %>% 
+                        inner_join(odds_ratio_ci_sex) %>% 
+                        inner_join(df_coefs_sex) %>%
+                        inner_join(padj_df_sex)
+
+sum_odds_ratio_table_sex %>% 
+  mutate(across(where(is.double), 
+                ~ format(.x, digits = 3, scientific = TRUE))) %>% 
+  knitr::kable()
+```
+
+# Summarized models
+
+```{r, warning=FALSE, echo=TRUE, message=FALSE, comment=FALSE}
+sum_odds_ratio_table_vaccs <- sum_odds_ratio_table_vaccs %>% 
+                                arrange(Feature)
+                                
+sum_odds_ratio_table_omicron <- sum_odds_ratio_table_omicron %>% 
+                                arrange(Feature) 
+                                
+sum_odds_ratio_table_sex <- sum_odds_ratio_table_sex %>% 
+                                arrange(Feature) 
+                                
+sum_odds_ratio_table <- sum_odds_ratio_table %>% 
+                                arrange(Feature) 
+                                                           
+sum_table_test_results <- do.call("rbind", list(sum_odds_ratio_table,
+                                                sum_odds_ratio_table_vaccs,
+                                                sum_odds_ratio_table_omicron,
+                                                sum_odds_ratio_table_sex))
+
+sum_table_test_results <- sum_table_test_results %>% dplyr::rename("p value" = `Pr(>|z|)`)
+sum_table_test_results$p.adj <- p.adjust(sum_table_test_results$`p value`, method = "BY")
+
+index_line <- cumsum(c(nrow(sum_odds_ratio_table),
+                       nrow(sum_odds_ratio_table_vaccs), 
+                       nrow(sum_odds_ratio_table_omicron), 
+                       nrow(sum_odds_ratio_table_sex))) + 1
+                       
+knitr::kable(sum_table_test_results %>% 
+              mutate(across(where(is.double), 
+                    ~ format(.x, digits = 3, scientific = TRUE)))) %>%
+  kable_paper("striped", full_width = F) %>%
+   kableExtra::pack_rows(group_label = "Model 1 (full)", start_row = 1, end_row = index_line[1]-1, hline_after = T, indent = F) %>%
+   kableExtra::pack_rows(group_label = "Model 2 (vaccination status)", start_row = index_line[1], end_row = index_line[2], hline_after = T, indent = F) %>% 
+   kableExtra::pack_rows(group_label = "Model 3 (omicron)", start_row = index_line[2], end_row = index_line[3]-1, hline_after = T, indent = F) %>%
+   kableExtra::pack_rows(group_label = "Model 4 (sex)", start_row = index_line[3], end_row = index_line[4]-1, hline_after = T, indent = F) %>%
+   kable_styling() %>%
+   row_spec(c(1:3, index_line[1], index_line[2], index_line[3]), 
+              bold=T, hline_after = T)
+```
+
+```{tikz sym full model dag, echo=FALSE, fig.cap="DAG: Associated features", fig.ext='png', message=FALSE, warning=FALSE, comment=FALSE}
+\usetikzlibrary{arrows.meta}
+\usetikzlibrary{shapes.geometric, arrows}
+\usetikzlibrary{positioning}
+\tikzset{
+    > = stealth,
+    every node/.append style = {
+        text = black
+    },
+    every path/.append style = {
+        arrows = ->,
+        draw = black,
+        fill = black
+    }
+}
+
+\tikz{
+    \node (y) {symptoms};
+    \node (a) [below left = of y] {vaccination status};
+    \node (b) [below = of y] {omicron};
+    \node (c) [below right = of y] {sex};
+    \path (a) -- (y);
+    \path (b) -- (y);
+    \path (c) -- (y);
+    }
+```
+
+```{r  sumarized odds ratios logistic regression symptoms, warning=FALSE, echo=TRUE, message=FALSE, comment=FALSE, results='hide', fig.width = 15, fig.height = 5}
+odds_ratios_covariates <- sum_table_test_results %>% as.data.frame()
+
+par(mgp = c(2.5,1,0), font.lab = 2, mfrow=c(1,1), mar = c(10.1, 4.1, 0.2, 0.2))
+plot(odds_ratios_covariates$odds_ratio,
+     ylim = c(0, 2.5), pch = 20, cex = 3, xaxt = "n", xlab = "",  ylab = "odds ratio")
+sapply(seq_len(nrow(odds_ratios_covariates)), function(i){
+  arrows(x0=i, y0=odds_ratios_covariates$`2.5 %`[i], x1=i, y1=odds_ratios_covariates$`97.5 %`[i], code=3, col="black", lwd=2, angle=90, length=0.25)
+})
+axis(side = 1, at = seq_len(nrow(odds_ratios_covariates)), labels = odds_ratios_covariates %>% pull(Feature), las = 2, mgp = c(3, 0.75, 0))
+abline(h = 1, lty = 2)
+abline(v = c(1:3, 5, 7) + 0.5, lty = 2)
+
+pdf(file.path(plt_dir, "odds_ratio_symptoms_all_models.pdf"), width = 10, height = 5)
+par(mgp = c(2.5,1,0), font.lab = 2, mfrow=c(1,1), mar = c(10.1, 4.1, 0.2, 0.2))
+plot(odds_ratios_covariates$odds_ratio,
+     ylim = c(0, 2.5), pch = 20, cex = 3, xaxt = "n", xlab = "",  ylab = "odds ratio")
+sapply(seq_len(nrow(odds_ratios_covariates)), function(i){
+  arrows(x0=i, y0=odds_ratios_covariates$`2.5 %`[i], x1=i, y1=odds_ratios_covariates$`97.5 %`[i], code=3, col="black", lwd=2, angle=90, length=0.25)
+})
+axis(side = 1, at = seq_len(nrow(odds_ratios_covariates)), labels = odds_ratios_covariates %>% pull(Feature), las = 2, mgp = c(3, 0.75, 0))
+abline(h = 1, lty = 2)
+abline(v = c(1:3, 5, 7) + 0.5, lty = 2)
+dev.off()
+```
+
 # Factors influencing test result of RDT (only first participation)
 
 ```{r import data III, warning=FALSE, echo=TRUE, message=FALSE, comment=FALSE, results = 'asis'}
@@ -595,21 +1820,24 @@ if(!dir.exists(res_dir)){
   dir.create(res_dir)
 }
 
-df <- readr::read_csv2("data/single_participation_data.csv")
+df <- readr::read_csv2("data/single_participation_data.csv") %>% 
+      mutate(manufacturer = as.factor(manufacturer))
 ```
 
+# Factors influencing test result of RDT
 
 **ASSUMPTION OF THE ABSENCE OF MULTICOLLINEARITY**
 
-```{r multicollinearity III, warning=FALSE, echo=TRUE, message=FALSE, comment=FALSE, results = 'hide', fig.width=8, fig.height=8}
+```{r  pos dat multicollinearity, warning=FALSE, echo=TRUE, message=FALSE, comment=FALSE, results = 'hide', fig.width=8, fig.height=8}
 df_box_tid <- df %>% dplyr::mutate(symptoms1 = if_else(symptoms == 1, true = 1, false = 0),
                            symptoms2 = if_else(symptoms == 2, true = 1, false = 0),
                            omicron = as.numeric(omicron),
                            `vaccination status` = as.numeric(`vaccination status`),
                            `viral load` = as.numeric( `viral load`),
-                           genderW = if_else(gender == "W", true = 1, false = 0)) %>%
-                               # age = if_else(age == 0, true = 0.5, false = age)) %>%
-                dplyr::select(-symptoms, -gender)
+                           sexW = if_else(sex == "W", true = 1, false = 0),
+                           manufacturer1 = if_else(manufacturer == 1, true = 1, false = 0),
+                           manufacturer2 = if_else(manufacturer == 2, true = 1, false = 0)) %>%
+                dplyr::select(-symptoms, -manufacturer, -sex)
 
 png(filename = file.path(plt_dir, paste0("Scatter_all_pairs.png")),units="px", width=5000, height=5000, res=300)
 pairs(df_box_tid %>% dplyr::select(-ID, -`test result`), lower.panel = panel.cor, pch = 20)
@@ -622,27 +1850,28 @@ pairs(df_box_tid %>% dplyr::select(-ID, -`test result`), lower.panel = panel.cor
 
 Check with Box-Tidwell test with transformed continuous variables
 
-```{r box tidwell III, warning=FALSE, echo=TRUE, message=FALSE, comment=FALSE, results = 'asis', fig.width = 10, fig.height = 5}
-lreg <- glm(`test result` ~ age + ageTrans + `viral load` + viral_loadTrans + genderW + symptoms1 + symptoms2 + `vaccination status` + omicron + manufacturer, 
+```{r  pos dat box tidwell, warning=FALSE, echo=TRUE, message=FALSE, comment=FALSE, results = 'asis', fig.width = 10, fig.height = 5}
+lreg <- glm(`test result` ~ age + ageTrans + `viral load` + viral_loadTrans + sexW + symptoms1 + symptoms2 + 
+              `vaccination status` + omicron + manufacturer1 + manufacturer2, 
             data = df_box_tid %>% mutate(ageTrans = age * log(age),
-                                         viral_loadTrans = `viral load` * log(`viral load`)), 
+                                 viral_loadTrans = `viral load` * log(`viral load`)), 
             family=binomial(link="logit"))
 
 as.data.frame(summary(lreg)$coefficients) %>% 
   as_tibble(rownames = "Feature") %>% 
   mutate(across(where(is.double), 
                 ~ format(.x, digits = 2, scientific = T))) %>% 
-knitr::kable()
+  knitr::kable()
 ```
 
 
 ## Adult data set with all variants
 
-```{r lasso regression III, warning=FALSE, echo=TRUE, message=FALSE, comment=FALSE, results = 'hide'}
+```{r  pos dat lasso regression, warning=FALSE, echo=TRUE, message=FALSE, comment=FALSE, results = 'hide'}
 y <- df %>% pull(`test result`)
 X <- df %>% dplyr::select(-ID, -`test result`) %>%
             dplyr::mutate(symptoms = factor(symptoms),# + 1, levels = 1:3),
-                          gender = factor(gender, levels = c("M", "W")),
+                          sex = factor(sex, levels = c("M", "W")),
                           `vaccination status` = as.factor(as.numeric(`vaccination status`)),
                           manufacturer = factor(manufacturer))
 X_lasso <- X %>% mutate(across(where(is.factor), .fns = as.integer)) %>% as.matrix()
@@ -658,29 +1887,32 @@ lasso_cv <- glmnet::cv.glmnet(x = X_lasso, y = y, family = "binomial", alpha = 1
 model_all_lambdas <- glmnet::glmnet(x = X_lasso, y = y, family = "binomial", alpha = 1, nfolds = 10, lambda = lambdas2try)
 par(mfcol = c(1,2), mar=c(5,4.,2.,1)+0.1, font.lab = 2)
 plot(lasso_cv)
-put.fig.letter(label="A", location="topleft", font=2, cex = 1.5)
+put.fig.letter(label="a", location="topleft", font=1, cex = 1.5)
 matplot(log(model_all_lambdas$lambda), t(as.matrix(model_all_lambdas$beta)), type = "l", lty = rep(c(1,2), each = 9), col = RColorBrewer::brewer.pal(6,"Dark2"), lwd = 2,
         xlab = parse(text = ("Log(lambda)")), ylab = "Value of coefficients")
 legend("topright", lty = rep(c(1,2), each = 9), col = rep(RColorBrewer::brewer.pal(6,"Dark2"), 2) , lwd = 1.5, cex = .7,
-       legend = rownames(model_all_lambdas$beta))
-put.fig.letter(label="B", location="topleft", font=2, cex = 1.5)
+       legend = rownames(model_all_lambdas$beta), bty = "n")
+put.fig.letter(label="b", location="topleft", font=1, cex = 1.5)
 
-pdf(file.path(plt_dir, "LASSO_REGRESSION.pdf"), width = 10, height = 4)
+pdf(file.path(plt_dir, "LASSO_REGRESSION.pdf"), height = 5)
 par(mfcol = c(1,2), mar=c(5,4.,2.,1)+0.1, font.lab = 2)
 plot(lasso_cv)
-put.fig.letter(label="A", location="topleft", font=2, cex = 1.5)
+put.fig.letter(label="a", location="topleft", font=1, cex = 1.5)
 matplot(log(model_all_lambdas$lambda), t(as.matrix(model_all_lambdas$beta)), type = "l", lty = rep(c(1,2), each = 9), col = RColorBrewer::brewer.pal(6,"Dark2"), lwd = 2,
         xlab = parse(text = ("Log(lambda)")), ylab = "Value of coefficients")
 legend("topright", lty = rep(c(1,2), each = 9), col = rep(RColorBrewer::brewer.pal(6,"Dark2"), 2) , lwd = 1.5, cex = .7,
-       legend = rownames(model_all_lambdas$beta))
-put.fig.letter(label="B", location="topleft", font=2, cex = 1.5)
+       legend = rownames(model_all_lambdas$beta), bty = "n")
+put.fig.letter(label="b", location="topleft", font=1, cex = 1.5)
 dev.off()
 ```
 
 ## Perform lasso for minimal lambda
 
-```{r perform lasso III, warning=FALSE, echo=TRUE, message=FALSE, comment=FALSE, results = 'asis'}
+```{r  pos dat perform lasso, warning=FALSE, echo=TRUE, message=FALSE, comment=FALSE, results = 'asis'}
 model_all_lambdas <- glmnet::glmnet(x = X_lasso, y = y, family = "binomial", alpha = 1, nfolds = 10, lambda = lasso_cv$lambda.min)
+
+## Extract variables unequal zero after lasso
+lasso_vars_gt_zero <- rownames(model_all_lambdas$beta)[as.matrix(model_all_lambdas$beta)[,1] != 0]
 
 lambda_cv <- lasso_cv$lambda.min
 lasso_best <- broom::tidy(lasso_cv)[lasso_cv$index,] %>% dplyr::rename(MSE = estimate)
@@ -689,7 +1921,7 @@ lasso_best %>% knitr::kable(digits = 3)
 
 ## ROC lasso regression
 
-```{r roc lasso III, warning=FALSE, echo=FALSE, message=FALSE, comment=FALSE, results = 'asis', fig.width=8, fig.height=8}
+```{r  pos dat roc lasso, warning=FALSE, echo=FALSE, message=FALSE, comment=FALSE, results = 'asis', fig.width=8, fig.height=8}
 # Fit logistic regression model using glmnet::cv.glmnet with log loss as custom metric
 fit <- cv_log_loss(X = X_lasso, y = as.numeric(y), alpha = 1, nfolds = 10, lambda = lambda_cv)
 roc_plt <- plot_roc_curves(fit$roc_curves)
@@ -698,21 +1930,14 @@ roc_plt$roc_plot
 ggplot2::ggsave(plot = roc_plt$roc_plot, filename = file.path(plt_dir, "ROC_curve_logistic_regression.pdf"), device = "pdf", width = 8, height = 8, dpi = 300)
 ```
 
-## Final logistic regression based on selected features
+## Model 1: all factors after lasso
 
-```{r final features III, warning=FALSE, echo=TRUE, message=FALSE, comment=FALSE, results = 'asis'}
-## Extract varaibles unequal zero after lasso
-lasso_vars_gt_zero <- rownames(model_all_lambdas$beta)[as.matrix(model_all_lambdas$beta)[,1] != 0]
-```
+Remaining factors from lasso regression: `r paste0(lasso_vars_gt_zero, collapse = ", ")`
 
-### Odds ratios
-
-`r paste0(lasso_vars_gt_zero, collapse = ", ")`
-
-```{r final logistic regression III, warning=FALSE, echo=TRUE, message=FALSE, comment=FALSE, results='hide', fig.width = 10, fig.height = 5}
+```{r  pos dat final logistic regression model 1, warning=FALSE, echo=TRUE, message=FALSE, comment=FALSE, results='hide', fig.width = 10, fig.height = 5}
 df_logit <- df %>% dplyr::select(`test result`, matches(paste0(lasso_vars_gt_zero, collapse = "|"))) %>%
             dplyr::mutate(symptoms = factor(symptoms),
-                          gender = factor(gender, levels = c("M", "W")),
+                          sex = factor(sex, levels = c("M", "W")),
                           `vaccination status` = as.factor(as.numeric(`vaccination status`)))
 
 # Perform final logistic regression with shrinked data set
@@ -726,22 +1951,9 @@ odds_ratio_ci <- data.frame(exp(confint.default(glm_full)[-1,]), check.names = F
 # Store odds ratios and p values of lasso regression
 
 odds_ratio %>% inner_join(odds_ratio_ci) %>% inner_join(df_coefs) %>%
-  writexl::write_xlsx(path = file.path(res_dir, "lasso_coefs_odds_ratios.xlsx"))
+  writexl::write_xlsx(path = file.path(res_dir, "lasso_coefs_odds_ratios_model1.xlsx"))
 
 odds_ratio_ci <- odds_ratio_ci %>% as.data.frame()
-
-# Plot odds ratios and CI
-
-pdf(file.path(plt_dir, "odds_ratio.pdf"), width = 20, height = 7)
-par(mgp = c(2.5,1,0), font.lab = 2, mfrow=c(1,1), mar = c(4.1, 4.1, 0.2, 0.2))
-plot(seq_len(nrow(odds_ratio)), odds_ratio %>% pull(odds_ratio),
-     ylim = c(-1,5), pch = 20, cex = 3, xaxt = "n", xlab = "coefficients",  ylab = "odds ratio")
-sapply(seq_len(nrow(odds_ratio)), function(i){
-  arrows(x0=i, y0=odds_ratio_ci[i,2], x1=i, y1=odds_ratio_ci[i,3], code=3, col="black", lwd=2, angle=90, length=0.25)
-})
-axis(side = 1, at = seq_len(nrow(odds_ratio)), labels = odds_ratio %>% pull(Feature))
-abline(h = 1, lty = 2)
-dev.off()
 
 # Write data into excel
 
@@ -753,16 +1965,7 @@ sample_sizes_df <- df_logit %>%
   group_by(feature) %>%
   mutate(rel = n/sum(n))
   
-writexl::write_xlsx(sample_sizes_df, path = file.path(res_dir, "sample_sizes_for_features.xlsx"))
-
-par(mgp = c(2.5,1,0), font.lab = 2, mfrow=c(1,1), mar = c(4.1, 4.1, 0.2, 0.2))
-plot(seq_len(nrow(odds_ratio)), odds_ratio %>% pull(odds_ratio),
-     ylim = c(-1,5), pch = 20, cex = 3, xaxt = "n", xlab = "coefficients",  ylab = "odds ratio")
-sapply(seq_len(nrow(odds_ratio)), function(i){
-  arrows(x0=i, y0=odds_ratio_ci[i,2], x1=i, y1=odds_ratio_ci[i,3], code=3, col="black", lwd=2, angle=90, length=0.25)
-})
-axis(side = 1, at = seq_len(nrow(odds_ratio)), labels = odds_ratio %>% pull(Feature))
-abline(h = 1, lty = 2)
+writexl::write_xlsx(sample_sizes_df, path = file.path(res_dir, "sample_sizes_for_features_model1.xlsx"))
 ```
 
 **Odds ratio table**
@@ -774,7 +1977,12 @@ padj_df <- data.frame(Feature = df_coefs$Feature,
 sum_odds_ratio_table <- odds_ratio %>% 
                         inner_join(odds_ratio_ci) %>% 
                         inner_join(df_coefs) %>%
-                        inner_join(padj_df)
+                        inner_join(padj_df) %>% 
+                        mutate(Feature = case_when(Feature == "symptoms1" ~ "typical symptomatic", 
+                                                           Feature == "symptoms2" ~ "atypical symptomatic",
+                                                           TRUE ~ Feature),
+                               Feature = gsub(x = gsub(x = Feature, pattern = "2", repl = ""), pattern = "sexW", repl = "sex"),
+                               Feature = factor(Feature, levels = c("`viral load`", "typical symptomatic", "atypical symptomatic", "omicron", "`vaccination status`", "sex", "age")))
 
 sum_odds_ratio_table %>% 
   mutate(across(where(is.double), 
@@ -785,7 +1993,495 @@ sum_odds_ratio_table %>%
 ### Group sizes
 
 ```{r, warning=FALSE, echo=TRUE, message=FALSE, comment=FALSE, results='asis', fig.width = 10, fig.height = 5}
-sample_sizes_df %>% 
+sample_sizes_df %>%
   mutate(across(where(is.double), ~ round(.x, digits = 2))) %>% 
   knitr::kable()
+```
+
+
+## Model 2: viral load 
+
+```{r  pos dat model 2 logistic regression, warning=FALSE, echo=TRUE, message=FALSE, comment=FALSE, results='hide', fig.width = 10, fig.height = 5}
+# Perform final logistic regression with shrinked data set
+glm_load <- glm(`test result` ~  `viral load` + sex + age, data = df_logit, family = binomial(link='logit'))
+
+df_coefs_load <- as.data.frame(summary(glm_load)$coefficients) %>% as_tibble(rownames = "Feature")
+
+odds_ratio_load <- data.frame(odds_ratio = exp(coefficients(glm_load)[-1])) %>% as_tibble(rownames = "Feature")
+odds_ratio_ci_load <- data.frame(exp(confint.default(glm_load)[-1,]), check.names = F) %>% as_tibble(rownames = "Feature")
+
+# Store odds ratios and p values of lasso regression
+
+odds_ratio_load %>% inner_join(odds_ratio_ci_load) %>% inner_join(df_coefs_load) %>%
+  writexl::write_xlsx(path = file.path(res_dir, "lasso_coefs_odds_ratios_model2.xlsx"))
+
+odds_ratio_ci_load <- odds_ratio_ci_load %>% as.data.frame()
+```
+
+**Odds ratio table**
+
+```{r, warning=FALSE, echo=TRUE, message=FALSE, comment=FALSE, results='asis', fig.width = 10, fig.height = 5}
+padj_df <- data.frame(Feature = df_coefs_load$Feature, 
+                      p.adj = p.adjust(df_coefs_load$`Pr(>|z|)`, method = "BY"))
+
+sum_odds_ratio_table_load <- odds_ratio_load %>% 
+                        inner_join(odds_ratio_ci_load) %>% 
+                        inner_join(df_coefs_load) %>%
+                        inner_join(padj_df) %>% 
+                        mutate(Feature = case_when(Feature == "symptoms1" ~ "typical symptomatic", 
+                                                           Feature == "symptoms2" ~ "atypical symptomatic",
+                                                           TRUE ~ Feature),
+                               Feature = gsub(x = gsub(x = Feature, pattern = "2", repl = ""), pattern = "sexW", repl = "sex"),
+                               Feature = factor(Feature, levels = c("`viral load`", "typical symptomatic", "atypical symptomatic", "omicron", "`vaccination status`", "sex", "age")))
+
+sum_odds_ratio_table_load %>% 
+  mutate(across(where(is.double), 
+                ~ format(.x, digits = 3, scientific = TRUE))) %>% 
+  knitr::kable()
+```
+
+## Model 3: symptoms
+
+```{r  pos dat model 3 logistic regression, warning=FALSE, echo=TRUE, message=FALSE, comment=FALSE, results='hide', fig.width = 10, fig.height = 5}
+# Perform final logistic regression with shrinked data set
+glm_symp <- glm(`test result` ~  symptoms + sex + age, data = df_logit, family = binomial(link='logit'))
+
+df_coefs_symp <- as.data.frame(summary(glm_symp)$coefficients) %>% as_tibble(rownames = "Feature")
+
+odds_ratio_symp <- data.frame(odds_ratio = exp(coefficients(glm_symp)[-1])) %>% as_tibble(rownames = "Feature")
+odds_ratio_ci_symp <- data.frame(exp(confint.default(glm_symp)[-1,]), check.names = F) %>% as_tibble(rownames = "Feature")
+
+# Store odds ratios and p values of lasso regression
+
+odds_ratio_symp %>% inner_join(odds_ratio_ci_symp) %>% inner_join(df_coefs_symp) %>%
+  writexl::write_xlsx(path = file.path(res_dir, "lasso_coefs_odds_ratios_model3.xlsx"))
+
+odds_ratio_ci_symp <- odds_ratio_ci_symp %>% as.data.frame()
+```
+
+**Odds ratio table**
+
+```{r, warning=FALSE, echo=TRUE, message=FALSE, comment=FALSE, results='asis', fig.width = 10, fig.height = 5}
+padj_df <- data.frame(Feature = df_coefs_symp$Feature, 
+                      p.adj = p.adjust(df_coefs_symp$`Pr(>|z|)`, method = "BY"))
+
+sum_odds_ratio_table_symp <- odds_ratio_symp %>% 
+                        inner_join(odds_ratio_ci_symp) %>% 
+                        inner_join(df_coefs_symp) %>%
+                        inner_join(padj_df) %>% 
+                        mutate(Feature = case_when(Feature == "symptoms1" ~ "typical symptomatic", 
+                                                           Feature == "symptoms2" ~ "atypical symptomatic",
+                                                           TRUE ~ Feature),
+                               Feature = gsub(x = gsub(x = Feature, pattern = "2", repl = ""), pattern = "sexW", repl = "sex"),
+                               Feature = factor(Feature, levels = c("`viral load`", "typical symptomatic", "atypical symptomatic", "omicron", "`vaccination status`", "sex", "age")))
+
+sum_odds_ratio_table_symp %>% 
+  mutate(across(where(is.double), 
+                ~ format(.x, digits = 3, scientific = TRUE))) %>% 
+  knitr::kable()
+```
+
+
+## Model 4: VOC omicron infection
+
+
+```{r  pos dat model 4 logistic regression, warning=FALSE, echo=TRUE, message=FALSE, comment=FALSE, results='hide', fig.width = 10, fig.height = 5}
+# Perform final logistic regression with shrinked data set
+glm_omic <- glm(`test result` ~  omicron, data = df_logit, family = binomial(link='logit'))
+
+df_coefs_omic <- as.data.frame(summary(glm_omic)$coefficients) %>% as_tibble(rownames = "Feature")
+
+odds_ratio_omic <- data.frame(odds_ratio = exp(coefficients(glm_omic)[-1])) %>% as_tibble(rownames = "Feature")
+odds_ratio_ci_omic <- data.frame(exp(confint.default(glm_omic)), check.names = F)[-1,] %>% as_tibble(rownames = "Feature")
+
+# Store odds ratios and p values of lasso regression
+
+odds_ratio_omic %>% inner_join(odds_ratio_ci_omic) %>% inner_join(df_coefs_omic) %>%
+  writexl::write_xlsx(path = file.path(res_dir, "lasso_coefs_odds_ratios_model4.xlsx"))
+
+odds_ratio_ci_omic <- odds_ratio_ci_omic %>% as.data.frame()
+```
+
+**Odds ratio table**
+
+```{r, warning=FALSE, echo=TRUE, message=FALSE, comment=FALSE, results='asis', fig.width = 10, fig.height = 5}
+padj_df <- data.frame(Feature = df_coefs_omic$Feature, 
+                      p.adj = p.adjust(df_coefs_omic$`Pr(>|z|)`, method = "BY"))
+
+sum_odds_ratio_table_omic <- odds_ratio_omic %>% 
+                        inner_join(odds_ratio_ci_omic) %>% 
+                        inner_join(df_coefs_omic) %>%
+                        inner_join(padj_df) %>% 
+                        mutate(Feature = case_when(Feature == "symptoms1" ~ "typical symptomatic", 
+                                                           Feature == "symptoms2" ~ "atypical symptomatic",
+                                                           TRUE ~ Feature),
+                               Feature = gsub(x = gsub(x = Feature, pattern = "2", repl = ""), pattern = "sexW", repl = "sex"),
+                               Feature = factor(Feature, levels = c("`viral load`", "typical symptomatic", "atypical symptomatic", "omicron", "`vaccination status`", "sex", "age")))
+
+sum_odds_ratio_table_omic %>% 
+  mutate(across(where(is.double), 
+                ~ format(.x, digits = 3, scientific = TRUE))) %>% 
+  knitr::kable()
+```
+
+## Model 5: vaccination status
+
+```{r  pos dat model 5 logistic regression vaccs, warning=FALSE, echo=TRUE, message=FALSE, comment=FALSE, results='hide', fig.width = 10, fig.height = 5}
+# Perform final logistic regression with shrinked data set
+glm_vaccs <- glm(`test result` ~  `vaccination status`, data = df_logit, family = binomial(link='logit'))
+
+df_coefs_vaccs <- as.data.frame(summary(glm_vaccs)$coefficients) %>% as_tibble(rownames = "Feature")
+
+odds_ratio_vaccs <- data.frame(odds_ratio = exp(coefficients(glm_vaccs)[-1])) %>% as_tibble(rownames = "Feature")
+odds_ratio_ci_vaccs <- data.frame(exp(confint.default(glm_vaccs)), check.names = F)[-1,] %>% as_tibble(rownames = "Feature")
+
+# Store odds ratios and p values of lasso regression
+
+odds_ratio_vaccs %>% inner_join(odds_ratio_ci_vaccs) %>% inner_join(df_coefs_vaccs) %>%
+  writexl::write_xlsx(path = file.path(res_dir, "lasso_coefs_odds_ratios_model5.xlsx"))
+
+odds_ratio_ci_vaccs <- odds_ratio_ci_vaccs %>% as.data.frame()
+```
+
+**Odds ratio table**
+
+```{r, warning=FALSE, echo=TRUE, message=FALSE, comment=FALSE, results='asis', fig.width = 10, fig.height = 5}
+padj_df <- data.frame(Feature = df_coefs_vaccs$Feature, 
+                      p.adj = p.adjust(df_coefs_vaccs$`Pr(>|z|)`, method = "BY"))
+
+sum_odds_ratio_table_vaccs <- odds_ratio_vaccs %>% 
+                        inner_join(odds_ratio_ci_vaccs) %>% 
+                        inner_join(df_coefs_vaccs) %>%
+                        inner_join(padj_df) %>% 
+                        mutate(Feature = case_when(Feature == "symptoms1" ~ "typical symptomatic", 
+                                                           Feature == "symptoms2" ~ "atypical symptomatic",
+                                                           TRUE ~ Feature),
+                               Feature = gsub(x = gsub(x = Feature, pattern = "2", repl = ""), pattern = "sexW", repl = "sex"),
+                               Feature = factor(Feature, levels = c("`viral load`", "typical symptomatic", "atypical symptomatic", "omicron", "`vaccination status`", "sex", "age")))
+
+sum_odds_ratio_table_vaccs %>% 
+  mutate(across(where(is.double), 
+                ~ format(.x, digits = 3, scientific = TRUE))) %>% 
+  knitr::kable()
+```
+
+## Model 6: viral load and symptoms 
+
+```{r  pos dat model 6 logistic regression, warning=FALSE, echo=TRUE, message=FALSE, comment=FALSE, results='hide', fig.width = 10, fig.height = 5}
+glm_sym_load <- glm(`test result` ~  `viral load` + symptoms + sex + age, data = df_logit, family = binomial(link='logit'))
+
+df_coefs_sym_load <- as.data.frame(summary(glm_sym_load)$coefficients) %>% as_tibble(rownames = "Feature")
+
+odds_ratio_sym_load <- data.frame(odds_ratio = exp(coefficients(glm_sym_load)[-1])) %>% as_tibble(rownames = "Feature")
+odds_ratio_ci_sym_load <- data.frame(exp(confint.default(glm_sym_load)[-1,]), check.names = F) %>% as_tibble(rownames = "Feature")
+
+odds_ratio_sym_load %>% inner_join(odds_ratio_ci_sym_load) %>% inner_join(df_coefs_sym_load) %>%
+  writexl::write_xlsx(path = file.path(res_dir, "lasso_coefs_odds_ratios_model6.xlsx"))
+
+odds_ratio_ci_sym_load <- odds_ratio_ci_sym_load %>% as.data.frame()
+```
+
+**Odds ratio table**
+
+```{r, warning=FALSE, echo=TRUE, message=FALSE, comment=FALSE, results='asis', fig.width = 10, fig.height = 5}
+padj_df <- data.frame(Feature = df_coefs_sym_load$Feature, 
+                      p.adj = p.adjust(df_coefs_sym_load$`Pr(>|z|)`, method = "BY"))
+
+sum_odds_ratio_table_sym_load <- odds_ratio_sym_load %>% 
+                        inner_join(odds_ratio_ci_sym_load) %>% 
+                        inner_join(df_coefs_sym_load) %>%
+                        inner_join(padj_df) %>% 
+                        mutate(Feature = case_when(Feature == "symptoms1" ~ "typical symptomatic", 
+                                                           Feature == "symptoms2" ~ "atypical symptomatic",
+                                                           TRUE ~ Feature),
+                               Feature = gsub(x = gsub(x = Feature, pattern = "2", repl = ""), pattern = "sexW", repl = "sex"),
+                               Feature = factor(Feature, levels = c("`viral load`", "typical symptomatic", "atypical symptomatic", "omicron", "`vaccination status`", "sex", "age")))
+
+sum_odds_ratio_table_sym_load %>% 
+  mutate(across(where(is.double), 
+                ~ format(.x, digits = 3, scientific = TRUE))) %>% 
+  knitr::kable()
+```
+
+## Pairwise comparison: viral load and symptoms
+
+```{r, warning=FALSE, echo=TRUE, message=FALSE, comment=FALSE, results = 'asis'}
+df_logit %>% 
+  ggplot2::ggplot(ggplot2::aes(x = symptoms, 
+                               y = `viral load`, 
+                               fill = factor(`test result`))) +
+  ggplot2::stat_boxplot(geom = "errorbar", lwd = 1,show.legend = FALSE, position = ggplot2::position_dodge2(0.9)) +
+  ggplot2::geom_boxplot(color = "black", lwd = 1, show.legend = TRUE, outlier.size = 0, position = ggplot2::position_dodge2(0.8)) +
+  ggbeeswarm::geom_quasirandom(alpha = 0.8, pch = 20, size = 1, dodge.width = .8, color="black",alpha=.5,show.legend = F) +
+  ggplot2::theme_bw() +
+  ggsci::scale_fill_bmj() +
+  ggplot2::theme(axis.text = ggplot2::element_text(size = 14, colour = "black"),
+                 axis.title = ggplot2::element_text(face = "bold", size = 12),
+                 legend.title = ggplot2::element_blank(),
+                 legend.text = ggplot2::element_text(size = 12),
+                 legend.position = "bottom") +
+  ggplot2::xlab("Typical symptoms") +
+  ggplot2::ylab("viral load") +
+  # ggsignif::geom_signif(comparisons = list(c("yes", "no")),
+  #                       annotation = format(wt_res$p.value, scientific = T, digits = 2),
+  #                       tip_length = c(0.2, 0.04)) + 
+  ggplot2::scale_y_continuous(expand = expansion(mult = c(0.05, .1)))
+```
+
+```{r, warning=FALSE, echo=TRUE, message=FALSE, comment=FALSE, results = 'asis'}
+df_test_symp <- df_logit %>% group_by(`test result`, symptoms) %>% dplyr::count() %>% 
+  tidyr::pivot_wider(names_from = symptoms, values_from = n) %>% as.data.frame()
+
+rownames(df_test_symp) <- as.character(df_test_symp[,1])
+df_test_symp <- df_test_symp[,-1]
+
+for(i in seq_len(ncol(df_test_symp))){
+  fisher.test(df_test_symp[,-i][,2:1])
+}
+```
+
+
+## Model 7: viral load + vaccination status
+
+```{r  pos dat model 7 logistic regression vaccs viral, warning=FALSE, echo=TRUE, message=FALSE, comment=FALSE, results='hide', fig.width = 10, fig.height = 5}
+# Perform final logistic regression with shrinked data set
+glm_vaccs_load <- glm(`test result` ~  `viral load` + `vaccination status` + sex + age, data = df_logit, family = binomial(link='logit'))
+
+df_coefs_vaccs_load <- as.data.frame(summary(glm_vaccs_load)$coefficients) %>% as_tibble(rownames = "Feature")
+
+odds_ratio_vaccs_load <- data.frame(odds_ratio = exp(coefficients(glm_vaccs_load)[-1])) %>% as_tibble(rownames = "Feature")
+odds_ratio_ci_vaccs_load <- data.frame(exp(confint.default(glm_vaccs_load)), check.names = F)[-1,] %>% as_tibble(rownames = "Feature")
+
+# Store odds ratios and p values of lasso regression
+
+odds_ratio_vaccs_load %>% inner_join(odds_ratio_ci_vaccs_load) %>% inner_join(df_coefs_vaccs_load) %>%
+  writexl::write_xlsx(path = file.path(res_dir, "lasso_coefs_odds_ratios_model7.xlsx"))
+
+odds_ratio_ci_vaccs_load <- odds_ratio_ci_vaccs_load %>% as.data.frame()
+```
+
+**Odds ratio table**
+
+```{r, warning=FALSE, echo=TRUE, message=FALSE, comment=FALSE, results='asis', fig.width = 10, fig.height = 5}
+padj_df <- data.frame(Feature = df_coefs_vaccs_load$Feature, 
+                      p.adj = p.adjust(df_coefs_vaccs_load$`Pr(>|z|)`, method = "BY"))
+
+sum_odds_ratio_table_vaccs_load <- odds_ratio_vaccs_load %>% 
+                        inner_join(odds_ratio_ci_vaccs_load) %>% 
+                        inner_join(df_coefs_vaccs_load) %>%
+                        inner_join(padj_df) %>% 
+                        mutate(Feature = case_when(Feature == "symptoms1" ~ "typical symptomatic", 
+                                                           Feature == "symptoms2" ~ "atypical symptomatic",
+                                                           TRUE ~ Feature),
+                               Feature = gsub(x = gsub(x = Feature, pattern = "2", repl = ""), pattern = "sexW", repl = "sex"),
+                               Feature = factor(Feature, levels = c("`viral load`", "typical symptomatic", "atypical symptomatic", "omicron", "`vaccination status`", "sex", "age")))
+
+sum_odds_ratio_table_vaccs_load %>% 
+  mutate(across(where(is.double), 
+                ~ format(.x, digits = 3, scientific = TRUE))) %>% 
+  knitr::kable()
+```
+
+
+## Model 8: vaccination status and symptoms
+
+```{r  pos dat model 8 logistic regression vaccs sym, warning=FALSE, echo=TRUE, message=FALSE, comment=FALSE, results='hide', fig.width = 10, fig.height = 5}
+# Perform final logistic regression with shrinked data set
+glm_vaccs_sym <- glm(`test result` ~  `vaccination status` + symptoms + sex + age, data = df_logit, family = binomial(link='logit'))
+
+df_coefs_vaccs_sym <- as.data.frame(summary(glm_vaccs_sym)$coefficients) %>% as_tibble(rownames = "Feature")
+
+odds_ratio_vaccs_sym <- data.frame(odds_ratio = exp(coefficients(glm_vaccs_sym)[-1])) %>% as_tibble(rownames = "Feature")
+odds_ratio_ci_vaccs_sym <- data.frame(exp(confint.default(glm_vaccs_sym)), check.names = F)[-1,] %>% as_tibble(rownames = "Feature")
+
+# Store odds ratios and p values of lasso regression
+
+odds_ratio_vaccs_sym %>% inner_join(odds_ratio_ci_vaccs_sym) %>% inner_join(df_coefs_vaccs_sym) %>%
+  writexl::write_xlsx(path = file.path(res_dir, "lasso_coefs_odds_ratios_model8.xlsx"))
+
+odds_ratio_ci_vaccs_sym <- odds_ratio_ci_vaccs_sym %>% as.data.frame()
+```
+
+**Odds ratio table**
+
+```{r, warning=FALSE, echo=TRUE, message=FALSE, comment=FALSE, results='asis', fig.width = 10, fig.height = 5}
+padj_df <- data.frame(Feature = df_coefs_vaccs_sym$Feature, 
+                      p.adj = p.adjust(df_coefs_vaccs_sym$`Pr(>|z|)`, method = "BY"))
+
+sum_odds_ratio_table_vaccs_sym <- odds_ratio_vaccs_sym %>% 
+                        inner_join(odds_ratio_ci_vaccs_sym) %>% 
+                        inner_join(df_coefs_vaccs_sym) %>%
+                        inner_join(padj_df) %>% 
+                        mutate(Feature = case_when(Feature == "symptoms1" ~ "typical symptomatic", 
+                                                           Feature == "symptoms2" ~ "atypical symptomatic",
+                                                           TRUE ~ Feature),
+                               Feature = gsub(x = gsub(x = Feature, pattern = "2", repl = ""), pattern = "sexW", repl = "sex"),
+                               Feature = factor(Feature, levels = c("`viral load`", "typical symptomatic", "atypical symptomatic", "omicron", "`vaccination status`", "sex", "age")))
+
+sum_odds_ratio_table_vaccs_sym %>% 
+  mutate(across(where(is.double), 
+                ~ format(.x, digits = 3, scientific = TRUE))) %>% 
+  knitr::kable()
+```
+
+
+# Summarized models
+
+```{r, warning=FALSE, echo=TRUE, message=FALSE, comment=FALSE}
+
+sum_odds_ratio_table_load <- sum_odds_ratio_table_load %>% 
+                                mutate(type = if_else(Feature %in% c("`viral load`", "typical symptomatic", "atypical symptomatic", "omicron", "`vaccination status`"), 
+                                                      true = "covariate", false = "confounding"),
+                                       type = factor(type, levels = c("covariate", "confounding"))) %>% 
+                                arrange(type, Feature) 
+
+sum_odds_ratio_table_omic <- sum_odds_ratio_table_omic %>% 
+                                mutate(type = if_else(Feature %in% c("`viral load`", "typical symptomatic", "atypical symptomatic", "omicron", "`vaccination status`"), 
+                                                      true = "covariate", false = "confounding"),
+                                       type = factor(type, levels = c("covariate", "confounding"))) %>% 
+                                arrange(type, Feature) 
+
+sum_odds_ratio_table_symp <- sum_odds_ratio_table_symp %>% 
+                                mutate(type = if_else(Feature %in% c("`viral load`", "typical symptomatic", "atypical symptomatic", "omicron", "`vaccination status`"), 
+                                                      true = "covariate", false = "confounding"),
+                                       type = factor(type, levels = c("covariate", "confounding"))) %>% 
+                                arrange(type, Feature) 
+                                                           
+sum_odds_ratio_table_vaccs <- sum_odds_ratio_table_vaccs %>% 
+                                mutate(type = if_else(Feature %in% c("`viral load`", "typical symptomatic", "atypical symptomatic", "omicron", "`vaccination status`"), 
+                                                      true = "covariate", false = "confounding"),
+                                       type = factor(type, levels = c("covariate", "confounding"))) %>% 
+                                arrange(type, Feature) 
+                                                           
+sum_odds_ratio_table_sym_load <- sum_odds_ratio_table_sym_load %>% 
+                                mutate(type = if_else(Feature %in% c("`viral load`", "typical symptomatic", "atypical symptomatic", "omicron", "`vaccination status`"), 
+                                                      true = "covariate", false = "confounding"),
+                                       type = factor(type, levels = c("covariate", "confounding"))) %>% 
+                                arrange(type, Feature) 
+
+sum_odds_ratio_table_vaccs_load <- sum_odds_ratio_table_vaccs_load %>% 
+                                mutate(type = if_else(Feature %in% c("`viral load`", "typical symptomatic", "atypical symptomatic", "omicron", "`vaccination status`"), 
+                                                      true = "covariate", false = "confounding"),
+                                       type = factor(type, levels = c("covariate", "confounding"))) %>% 
+                                arrange(type, Feature)                   
+                                                           
+sum_odds_ratio_table_vaccs_sym <- sum_odds_ratio_table_vaccs_sym %>% 
+                                mutate(type = if_else(Feature %in% c("`viral load`", "typical symptomatic", "atypical symptomatic", "omicron", "`vaccination status`"), 
+                                                      true = "covariate", false = "confounding"),
+                                       type = factor(type, levels = c("covariate", "confounding"))) %>% 
+                                arrange(type, Feature)                                                       
+                                                           
+
+sum_odds_ratio_table <- sum_odds_ratio_table %>% 
+                                mutate(type = if_else(Feature %in% c("`viral load`", "typical symptomatic", "atypical symptomatic", "omicron", "`vaccination status`"), 
+                                                      true = "covariate", false = "confounding"),
+                                       type = factor(type, levels = c("covariate", "confounding"))) %>% 
+                                arrange(type, Feature) 
+
+list_sum_tables <- list(sum_odds_ratio_table,
+                        sum_odds_ratio_table_load, 
+                        sum_odds_ratio_table_symp,
+                        sum_odds_ratio_table_omic,
+                        sum_odds_ratio_table_vaccs,
+                        sum_odds_ratio_table_sym_load,
+                        sum_odds_ratio_table_vaccs_load,
+                        sum_odds_ratio_table_vaccs_sym)
+                                                
+sum_table_test_results <- do.call("rbind", list_sum_tables)
+
+sum_table_test_results <- sum_table_test_results %>% dplyr::rename("p value" = `Pr(>|z|)`)
+sum_table_test_results$p.adj <- p.adjust(sum_table_test_results$`p value`, method = "BY")
+
+index_line <- cumsum(unlist(lapply(list_sum_tables, nrow))) + 1
+                       
+knitr::kable(sum_table_test_results %>% 
+              mutate(across(where(is.double), 
+                    ~ format(.x, digits = 3, scientific = TRUE)))) %>%
+  kable_paper("striped", full_width = F) %>%
+   kableExtra::pack_rows(group_label = "Model 1", 1, index_line[1],hline_after = T, indent = F) %>% 
+   kableExtra::pack_rows(group_label = "Model 2", start_row = index_line[1], end_row = index_line[2], hline_after = T, indent = F) %>% 
+   kableExtra::pack_rows(group_label = "Model 3", start_row = index_line[2], end_row = index_line[3]-1, hline_after = T, indent = F) %>%
+   kableExtra::pack_rows(group_label = "Model 4", start_row = index_line[3], end_row = index_line[4]-1, hline_after = T, indent = F) %>%
+   kableExtra::pack_rows(group_label = "Model 5", start_row = index_line[4], end_row = index_line[5]-1, hline_after = T, indent = F) %>%
+   kableExtra::pack_rows(group_label = "Model 6", start_row = index_line[5], end_row = index_line[6]-1, hline_after = T, indent = F) %>%
+   kableExtra::pack_rows(group_label = "Model 7", start_row = index_line[6], end_row = index_line[7]-1, hline_after = T, indent = F) %>%
+   kableExtra::pack_rows(group_label = "Model 8", start_row = index_line[7], end_row = index_line[8]-1, hline_after = T, indent = F) %>%
+   kable_styling()%>%
+   row_spec(c(1:5, index_line[1], index_line[2] + 0:1, index_line[3], index_line[4],
+              index_line[5] + 0:2, index_line[6] + 0:1, index_line[7] + 0:2), 
+              bold=T, hline_after = T)
+```
+
+```{tikz pos dat final model dag, echo=FALSE, fig.cap="DAG: Associated features", fig.ext='png', message=FALSE, warning=FALSE, comment=FALSE}
+\usetikzlibrary{arrows.meta}
+\usetikzlibrary{shapes.geometric, arrows}
+\usetikzlibrary{positioning}
+\tikzset{
+    > = stealth,
+    every node/.append style = {
+        text = black
+    },
+    every path/.append style = {
+        arrows = ->,
+        draw = black,
+        fill = black
+    }
+}
+
+\tikz{
+    \node (y) {test result};
+    \node (a) [below left = of y] {viral load};
+    \node (b) [below = of a] {symptoms};
+    \node (c) [below right = of b] {omicron};
+    \node (d) [right = of c] {vaccination status};
+    \node[draw=gray] (e) [below right = of y] {sex};
+    \node[draw=gray] (f) [above = of e] {age};
+    \path (b) -- (a);
+    \path[dotted] (c) -- (a);
+    \path[dotted] (c) -- (b);
+    \path[dashed] (d) -- (b);
+    \path (a) -- (y);
+    \path (b) -- (y);
+    \path (c) -- (y);
+    \path (d) -- (y);
+    % confounding effects
+    \path[draw=gray] (e) -- (y);
+    \path[draw=gray] (e) -- (a);
+    \path[draw=gray] (e) -- (b);
+    \path[draw=gray] (f) -- (y);
+    \path[draw=gray] (f) -- (a);
+    \path[draw=gray] (f) -- (b);
+}
+```
+
+
+```{r, warning=FALSE, echo=TRUE, message=FALSE, comment=FALSE, results='hide', fig.width = 22, fig.height = 5}
+odds_ratios_covariates <- sum_table_test_results %>% filter(type == "covariate") %>% as.data.frame()
+x_labels <- gsub(x = odds_ratios_covariates %>% pull(Feature), pattern = " ", repl = "\n")
+x_labels <- gsub(x = x_labels, pattern = "`|2", repl = "")
+x_labels <- gsub(x = x_labels, pattern = "sexW", repl = "sex")
+
+par(mgp = c(2.5,1,0), font.lab = 2, mfrow=c(1,1), mar = c(10.1, 4.1, 0.2, 0.2))
+plot(odds_ratios_covariates$odds_ratio,
+     ylim = c(0, 6), pch = 20, cex = 3, xaxt = "n", xlab = "",  ylab = "odds ratio")
+sapply(seq_len(nrow(odds_ratios_covariates)), function(i){
+  arrows(x0=i, y0=odds_ratios_covariates$`2.5 %`[i], x1=i, y1=odds_ratios_covariates$`97.5 %`[i], code=3, col="black", lwd=2, angle=90, length=0.1)
+})
+axis(side = 1, at = seq_len(nrow(odds_ratios_covariates)), labels = x_labels, las = 1, mgp = c(3, 2, 0))
+abline(h = 1, lty = 2)
+abline(v = cumsum(unlist(lapply(list_sum_tables, function(tab) nrow(tab %>% filter(type %in% "covariate"))))) + 0.5, lty = 2)
+
+pdf(file.path(plt_dir, "Odds_ratio_all_models.pdf"), width = 22, height = 5)
+odds_ratios_covariates <- sum_table_test_results %>% filter(type == "covariate") %>% as.data.frame()
+
+par(mgp = c(2.5,1,0), font.lab = 2, mfrow=c(1,1), mar = c(10.1, 4.1, 0.2, 0.2))
+plot(odds_ratios_covariates$odds_ratio,
+     ylim = c(0, 6), pch = 20, cex = 3, xaxt = "n", xlab = "",  ylab = "odds ratio")
+sapply(seq_len(nrow(odds_ratios_covariates)), function(i){
+  arrows(x0=i, y0=odds_ratios_covariates$`2.5 %`[i], x1=i, y1=odds_ratios_covariates$`97.5 %`[i], code=3, col="black", lwd=2, angle=90, length=0.1)
+})
+axis(side = 1, at = seq_len(nrow(odds_ratios_covariates)), labels = x_labels, las = 1, mgp = c(3, 2, 0))
+abline(h = 1, lty = 2)
+abline(v = cumsum(unlist(lapply(list_sum_tables, function(tab) nrow(tab %>% filter(type %in% "covariate"))))) + 0.5, lty = 2)
+dev.off()
 ```
